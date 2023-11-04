@@ -10,20 +10,26 @@
 #include "lpc17xx_gpdma.h"
 #include "lpc17xx_exti.h"
 #include "lpc17xx_gpio.h"
+#include<stdbool.h>// para booleano
 
 #define PIN_20 ((uint32_t)(1<<20))
 #define PIN_21 ((uint32_t)(1<<21))
+ bool pul0=1;
+ bool pul1=1;
+ bool pul2=1;
+ bool pul3=1;
+ bool flag=1;
 
 	void confPIN();
 	//void confTIMER();
 	void confADC();
-	//void confDAC();
+	void confDAC();
 	//void createonda();
-	//void confDMA();
+	void confDMA();
 	//void confINTGPIO();
 	void confEXTINT();
 	//void ordenar();
-	//void dividir();
+	void escalar();
 
 //uint32_t wf[1024];
 //uint8_t states=0;uint8_t states2=0;
@@ -39,12 +45,13 @@ int main(){
 	confEXTINT();
 	//confINTGPIO();
 	confADC();
-	//confDAC();
-	//confDMA();
+	confDAC();
+	confDMA();
 
-	GPIO_SetValue(1,PIN_21);
-	GPIO_SetValue(1,PIN_20);
-	//GPIO_ClearValue(1,PIN_20);
+	//GPIO_SetValue(1,PIN_21);
+	//GPIO_SetValue(1,PIN_20);
+	GPIO_ClearValue(1,PIN_20);
+	GPIO_ClearValue(1,PIN_21);
 
 while(1){
 }
@@ -56,18 +63,18 @@ void confPIN(){
 	GPIO_SetDir(1,PIN_20,1);
 	GPIO_SetDir(1,PIN_21,1);
 
-	PINSEL_CFG_Type structPINADC0;// ADC
+	PINSEL_CFG_Type structPINADC0;// ADC P0.23
 	structPINADC0.Pinnum=23;
 	structPINADC0.Portnum=0;
 	structPINADC0.Funcnum=1;
-	structPINADC0.Pinmode=2;
+	structPINADC0.Pinmode=2;//Ni pull up ni pull down
 	PINSEL_ConfigPin(&structPINADC0);
 
-	PINSEL_CFG_Type structPINADC1;// ADC
+	PINSEL_CFG_Type structPINADC1;// ADC P0.24
 	structPINADC1.Pinnum=24;
 	structPINADC1.Portnum=0;
 	structPINADC1.Funcnum=1;
-	structPINADC1.Pinmode=2;
+	structPINADC1.Pinmode=2;//Ni pull up ni pull down
 	PINSEL_ConfigPin(&structPINADC1);
 
 	PINSEL_CFG_Type structPINEXT0;// PINEXT 2.10
@@ -84,20 +91,39 @@ void confPIN(){
 	structPINEXT1.Pinmode=0;//pull up
 	PINSEL_ConfigPin(&structPINEXT1);
 
+	/////--------------------------------------------
+	PINSEL_CFG_Type structPINEXT2;// PINEXT 2.12
+	structPINEXT2.Pinnum=12;
+	structPINEXT2.Portnum=2;
+	structPINEXT2.Funcnum=1;
+	structPINEXT2.Pinmode=0;//pull up
+	PINSEL_ConfigPin(&structPINEXT2);
+
+	PINSEL_CFG_Type structPINEXT3;// PINEXT 2.13
+	structPINEXT3.Pinnum=13;
+	structPINEXT3.Portnum=2;
+	structPINEXT3.Funcnum=1;
+	structPINEXT3.Pinmode=0;//pull up
+	PINSEL_ConfigPin(&structPINEXT3);
+
+	PINSEL_CFG_Type structPINDAC;// AOUT
+	structPINDAC.Pinnum=26;
+	structPINDAC.Portnum=0;
+	structPINDAC.Funcnum=2;
+	structPINDAC.Pinmode=2;//Ni pull up ni pull down
+	PINSEL_ConfigPin(&structPINDAC);
 }
 
 
 void confADC(){
-	ADC_Init(LPC_ADC,32000);
+	LPC_SC->PCLKSEL0 |=(3<<24);//asi sea 100M/8= 12,5    < 13M
+	ADC_Init(LPC_ADC,40000);// suponemos dos señales de 10k
 	//ADC_IntConfig(LPC_ADC,0,ENABLE);
-	ADC_ChannelCmd(LPC_ADC,0,ENABLE);
-	//ADC_BurstCmd(LPC_ADC_TypeDef *ADCx, ENABLE);
-	ADC_StartCmd(LPC_ADC,0);
-
 	//ADC_IntConfig(LPC_ADC,1,ENABLE);
+	ADC_ChannelCmd(LPC_ADC,0,ENABLE);
 	ADC_ChannelCmd(LPC_ADC,1,ENABLE);
-	//ADC_BurstCmd(LPC_ADC_TypeDef *ADCx, ENABLE);
-	ADC_StartCmd(LPC_ADC,1);
+	ADC_BurstCmd(LPC_ADC, ENABLE);
+	ADC_StartCmd(LPC_ADC,0);
 	//NVIC_EnableIRQ(ADC_IRQn);
 
 }
@@ -118,27 +144,223 @@ void confEXTINT(){
 	EXTI_Config(&structEXTINT1);
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 
+
 	NVIC_EnableIRQ(EINT0_IRQn);//EINT0 ya q usamos p2.10
-	NVIC_EnableIRQ(EINT1_IRQn);//EINT0 ya q usamos p2.11
+	NVIC_EnableIRQ(EINT1_IRQn);//EINT1 ya q usamos p2.11
+	//------------
+	EXTI_InitTypeDef structEXTINT2;
+	structEXTINT2.EXTI_Line=EXTI_EINT2;
+	structEXTINT2.EXTI_Mode=EXTI_MODE_LEVEL_SENSITIVE;
+	structEXTINT2.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
+	EXTI_Config(&structEXTINT2);
+	EXTI_ClearEXTIFlag(EXTI_EINT2);
+	NVIC_EnableIRQ(EINT2_IRQn);//EINT2 ya q usamos p2.12
+
+	EXTI_InitTypeDef structEXTINT3;
+	structEXTINT3.EXTI_Line=EXTI_EINT3;
+	structEXTINT3.EXTI_Mode=EXTI_MODE_LEVEL_SENSITIVE;
+	structEXTINT3.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
+	EXTI_Config(&structEXTINT3);
+	EXTI_ClearEXTIFlag(EXTI_EINT3);
+	NVIC_EnableIRQ(EINT3_IRQn);//EINT3 ya q usamos p2.13
 }
 
 
 void EINT0_IRQHandler(){
-
-	GPIO_SetValue(1,PIN_20);
-	GPIO_ClearValue(1,PIN_21);
+	pul0=!pul0;
+	if(pul0){//pul0==1 apagado led
+		GPIO_ClearValue(1,PIN_20);
+		GPDMA_ChannelCmd(0,DISABLE);//deshabilitamos el canal ADC0 to MEM
+	}else{//pul0==0 prendido led
+		GPIO_SetValue(1,PIN_20);
+		GPDMA_ChannelCmd(0,ENABLE);//habilitamos el canal ADC0 to MEM
+	}
 
 	EXTI_ClearEXTIFlag(EXTI_EINT0);
 }
 
 void EINT1_IRQHandler(){
-
-	GPIO_SetValue(1,PIN_21);
-	GPIO_ClearValue(1,PIN_20);
+	pul1=!pul1;
+	if(pul1){//pul0==1 apagado led
+		GPIO_ClearValue(1,PIN_21);
+		GPDMA_ChannelCmd(1,DISABLE);//deshabilitamos el canal ADC1 to MEM
+	}else{//pul0==0 prendido led
+		GPIO_SetValue(1,PIN_21);
+		GPDMA_ChannelCmd(1,ENABLE);//habilitamos el canal ADC1 to MEM
+	}
 
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 }
 
+//-------------- Parte nueva
+
+void confDMA(){
+	//pasamos lo que esta convirtiendo el adc0 a memoria(banco1_PRIMERA MITAD)
+	GPDMA_LLI_Type LLI1;
+	LLI1.SrcAddr = (uint32_t) &LPC_ADC->ADDR0;//             <-- VER SI HAY Q USAR EL GLOBAL O ESTE
+	LLI1.DstAddr = (uint32_t) 0x20080000;
+	LLI1.NextLLI = (uint32_t) &LLI1;//Se repite en bucle la lista
+	LLI1.Control = 0x2000/4   //0x2000 / 4 , ya q los datos tienen 32 bits,no 8
+				   | (2<<18) //source width 32 bits
+				   | (2<<21) //dest width 32 bits
+				   | (1<<27); //destino increment
+
+
+	GPDMA_Channel_CFG_Type ADC_to_MEM0;
+	ADC_to_MEM0.ChannelNum = 0;
+	ADC_to_MEM0.SrcMemAddr = 0;
+	ADC_to_MEM0.DstMemAddr = (uint32_t)0x20080000;
+	ADC_to_MEM0.TransferSize = 0x2000/4 ;
+	ADC_to_MEM0.TransferWidth = 0;
+	ADC_to_MEM0.TransferType = GPDMA_TRANSFERTYPE_P2M;
+	ADC_to_MEM0.SrcConn = GPDMA_CONN_ADC;
+	ADC_to_MEM0.DstConn = 0;
+	ADC_to_MEM0.DMALLI = (uint32_t)&LLI1;
+	GPDMA_Setup(&ADC_to_MEM0);
+
+	// pasamos lo que esta en la memoria(banco1) al dac para q vaya convirtiendo
+	GPDMA_LLI_Type LLI3;
+	LLI3.SrcAddr = (uint32_t) 0x20080000;
+	LLI3.DstAddr = (uint32_t) &LPC_DAC->DACR; //vemos q el destino es el dac. osea toma las muestras y las manda al DAC
+	LLI3.NextLLI = (uint32_t) &LLI3;//Se repite en bucle la lista
+	LLI3.Control = 0x2000/4
+				   | (2<<18) //source width 32 bits
+				   | (2<<21) //dest width 32 bits
+				   | (1<<26); //origen increment
+
+	GPDMA_Channel_CFG_Type MEM0_to_DAC;
+	MEM0_to_DAC.ChannelNum = 2;
+	MEM0_to_DAC.SrcMemAddr = (uint32_t) 0x20080000;
+	MEM0_to_DAC.DstMemAddr = 0;
+	MEM0_to_DAC.TransferSize = 0x2000/4 ;
+	MEM0_to_DAC.TransferWidth = 0;
+	MEM0_to_DAC.TransferType = GPDMA_TRANSFERTYPE_M2P;
+	MEM0_to_DAC.SrcConn = 0;
+	MEM0_to_DAC.DstConn = GPDMA_CONN_DAC;
+	MEM0_to_DAC.DMALLI = (uint32_t)&LLI3;
+	GPDMA_Setup(&MEM0_to_DAC);
+
+	//GPDMA_Init();
+
+	//////////////////////////////////// PARTE NUEVA
+
+	//pasamos lo que esta convirtiendo el adc1 a memoria(banco1_SEGUNDA MITAD)
+	GPDMA_LLI_Type LLI2;
+	LLI2.SrcAddr = (uint32_t) &LPC_ADC->ADDR1;//             <-- VER SI HAY Q USAR EL GLOBAL O ESTE
+	LLI2.DstAddr = (uint32_t) 0x20080000 + 0x2000;
+	LLI2.NextLLI = (uint32_t) &LLI2;//Se repite en bucle la lista
+	LLI2.Control = 0x2000/4   //0x2000 / 4 , ya q los datos tienen 32 bits,no 8
+				   | (2<<18) //source width 32 bits
+				   | (2<<21) //dest width 32 bits
+				   | (1<<27); //destino increment
+
+
+	GPDMA_Channel_CFG_Type ADC_to_MEM1;
+	ADC_to_MEM1.ChannelNum = 1;
+	ADC_to_MEM1.SrcMemAddr = 0;
+	ADC_to_MEM1.DstMemAddr = (uint32_t)0x20080000+ 0x2000;
+	ADC_to_MEM1.TransferSize = 0x2000/4 ;
+	ADC_to_MEM1.TransferWidth = 0;
+	ADC_to_MEM1.TransferType = GPDMA_TRANSFERTYPE_P2M;
+	ADC_to_MEM1.SrcConn = GPDMA_CONN_ADC;
+	ADC_to_MEM1.DstConn = 0;
+	ADC_to_MEM1.DMALLI = (uint32_t)&LLI2;
+	GPDMA_Setup(&ADC_to_MEM1);
+
+	// pasamos lo que esta en la memoria(banco1) al dac para q vaya convirtiendo
+	GPDMA_LLI_Type LLI4;
+	LLI4.SrcAddr = (uint32_t) 0x20080000 + 0x2000;
+	LLI4.DstAddr = (uint32_t) &LPC_DAC->DACR; //vemos q el destino es el dac. osea toma las muestras y las manda al DAC
+	LLI4.NextLLI = (uint32_t) &LLI4;//Se repite en bucle la lista
+	LLI4.Control = 0x2000/4
+				   | (2<<18) //source width 32 bits
+				   | (2<<21) //dest width 32 bits
+				   | (1<<26); //origen increment
+
+	GPDMA_Channel_CFG_Type MEM1_to_DAC;
+	MEM1_to_DAC.ChannelNum = 3;
+	MEM1_to_DAC.SrcMemAddr = (uint32_t) 0x20080000 + 0x2000;
+	MEM1_to_DAC.DstMemAddr = 0;
+	MEM1_to_DAC.TransferSize = 0x2000/4 ;
+	MEM1_to_DAC.TransferWidth = 0;
+	MEM1_to_DAC.TransferType = GPDMA_TRANSFERTYPE_M2P;
+	MEM1_to_DAC.SrcConn = 0;
+	MEM1_to_DAC.DstConn = GPDMA_CONN_DAC;
+	MEM1_to_DAC.DMALLI = (uint32_t)&LLI4;
+	GPDMA_Setup(&MEM1_to_DAC);
+
+
+	////////////////////////////////////
+	GPDMA_Init();
+
+	GPDMA_ChannelCmd(0,DISABLE);//deshabilitamos el canal ADC0 to MEM
+	GPDMA_ChannelCmd(1,DISABLE);//deshabilitamos el canal ADC1 to MEM
+	GPDMA_ChannelCmd(2,DISABLE);//deshabilitamos el canal MEM(1raParte) to DAC
+	GPDMA_ChannelCmd(3,DISABLE);//deshabilitamos el canal MEM(2daParte) to DAC
+
+
+}
+
+void EINT2_IRQHandler(){
+	pul2=!pul2;
+	if(pul2){//pul2==1 apagado el pasaje DMA(ADC0) to DAC
+			GPDMA_ChannelCmd(2,DISABLE);
+
+	}else{//pul2==0 prendido el pasaje DMA(ADC0) to DA
+		if(pul2==0){
+			if(pul0==1){///osea si pul0 esta apagado
+				escalar();
+				GPDMA_ChannelCmd(3,DISABLE);
+				GPDMA_ChannelCmd(2,ENABLE);
+			}
+		}
+	}
+
+	EXTI_ClearEXTIFlag(EXTI_EINT2);
+}
+
+void EINT3_IRQHandler(){
+	pul3=!pul3;
+	if(pul3){//pul3==1 apagado el pasaje DMA(ADC1) to DAC
+			GPDMA_ChannelCmd(3,DISABLE);
+
+	}else{//pul3==0 prendido el pasaje DMA(ADC1) to DAC
+		if(pul3==0){
+			if(pul1==1){///osea si pul1 esta apagado
+				escalar();
+				GPDMA_ChannelCmd(2,DISABLE);
+				GPDMA_ChannelCmd(3,ENABLE);
+			}
+		}
+	}
+
+	EXTI_ClearEXTIFlag(EXTI_EINT3);
+}
+
+void confDAC(){
+	DAC_CONVERTER_CFG_Type dacCfg;
+	dacCfg.CNT_ENA = SET;
+	dacCfg.DMA_ENA = SET;
+	DAC_Init(LPC_DAC);
+
+	uint32_t tmp;
+	tmp = 120; //                         <--------configurar valor(CALCULAR CANT DE MUESTRAS)
+// T=1/10000
+//   T    100
+// ---- X---- =
+// 1024    4
+	DAC_SetDMATimeOut(LPC_DAC, tmp);
+	DAC_ConfigDAConverterControl(LPC_DAC, &dacCfg);
+}
+
+void escalar(){
+    uint32_t *posicion_memoria = (uint32_t *)0x20080000;
+    for (uint32_t i = 0; i < (0x4000/4); i++) {//        <-- VAMOS A ESCALAR todo el banco1
+        *(posicion_memoria + i) = (*posicion_memoria + i)/4;
+    }
+}
+
+//----------------------
 //void createonda(){
 // for(uint8_t i=0;i<512;i--){
 //	wf[i]=512+i;
