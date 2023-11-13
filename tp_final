@@ -1,4 +1,5 @@
-//ANDA SIN CONECTAR EL USB DE TRANMISION A LA COMPU
+
+// TRABAJO TP FINAL ELECTRONICA DIGITAL
 
 ///*
 
@@ -15,101 +16,90 @@
 #include <string.h>
 #include <math.h>
 #include <stdint.h>
+#include<stdbool.h>// para booleano
 
 #define PIN_20 ((uint32_t)(1<<20))
 #define PIN_21 ((uint32_t)(1<<21))
 
-volatile uint16_t ADC0Value = 0;
-volatile uint16_t ADC1Value = 0;
-//
-uint8_t ADC0Value8 = 0;
-//uint8_t resultado[10];
+volatile uint16_t ADC0Value = 0;//valor convertido
+volatile uint16_t valtosend[10];//valor a enviar por transmision
 
-uint8_t prueba2=0;
+volatile uint8_t valuesensor = 0;//valor digital obtenido por el sensor
+volatile uint8_t sensordig[5];// sensor digital.valor a enviar por transmision
+
+uint8_t pul0=1;
+uint8_t pul1=1;
+
 	void confPIN();
-	//void confTIMER();
-	void configADC();
-	//void confDAC();
-	//void createonda();
-	//void confDMA();
-	//void confINTGPIO();
-	void confEXTINT();
-	void config_timer_0();
-	void confUart();
-	//void ordenar();
-	//void dividir();
+	void configADC();// convierte la señal analogica del sensor analogico,en digital
 
-//uint32_t wf[1024];
-//uint8_t states=0;uint8_t states2=0;
-//uint32_t CANTDATOS0=0x2000 / 4; //ya q usamos 32 bits y no 8
-//uint32_t parte2mem= 0x2007C000+0x2000;
-//uint32_t CANTDATOS1=0x2000 / 4; //ya q usamos 32 bits y no 8
-//uint32_t CANTDATOSmuestras=1024;//ya q son la cantidad de muestras necesarias para crear la señal
+	void confDMA();// configuramos el canal para mandar los datos sensor analogico por uart usando dma
+
+	void confEXTINT();
+	void confUart();
+
+	void confTIMER1();// timer para mandar cada 2 segundos la tranmision uart de los datos del sensor analogico
+	void confTIMER2();// timer para mandar cada 2 segundos la tranmision uart de los datos del sensor digital
+	void confDMA2();// configuramos el canal para mandar los datos sensor digital por uart usando dma
+	void confDMA3();
 
 int main(){
 	uint32_t value=0;
-	confPIN();
-	//createonda();
-	config_timer_0();
+	GPIO_ClearValue(1,PIN_20);
+	GPIO_ClearValue(1,PIN_21);
+
+	confPIN(); //configuramos todos los pines
 	confEXTINT();
-	//confINTGPIO();
+
 	confUart();
 	configADC();
-	//confDAC();
-	//confDMA();
+	confDMA();
+	confDMA2();
+	confDMA3();
 
-	GPIO_SetValue(1,PIN_21);
-	GPIO_SetValue(1,PIN_20);
-	//GPIO_ClearValue(1,PIN_20);
-	TIM_ResetCounter(LPC_TIM0);
+	confTIMER1();
+	confTIMER2();
+
+	TIM_ResetCounter(LPC_TIM1);
+	TIM_ResetCounter(LPC_TIM2);
+	
 	while(1){
-		value++;
+		value++;// poner un breakpoint aca e ir apretando resumen para ver como funciona
 	}
 
-return 0;
+	return 0;
 }
 
 void confPIN(){
 	GPIO_SetDir(1,PIN_20,1);
 	GPIO_SetDir(1,PIN_21,1);
 
-	PINSEL_CFG_Type structPINADC0;// ADC0.0
-	structPINADC0.Pinnum=23;
-	structPINADC0.Portnum=0;
-	structPINADC0.Funcnum=1;
-	structPINADC0.Pinmode=2;
-	PINSEL_ConfigPin(&structPINADC0);
+	GPIO_SetDir(0,0,1);//pin que va a recibir el dato proveniente del sensor digital
 
-	PINSEL_CFG_Type structPINADC1;// ADC0.1
-	structPINADC1.Pinnum=24;
+	PINSEL_CFG_Type structPINADC1;// ADC0.2
+	structPINADC1.Pinnum=25;
 	structPINADC1.Portnum=0;
 	structPINADC1.Funcnum=1;
 	structPINADC1.Pinmode=2;
 	PINSEL_ConfigPin(&structPINADC1);
 
-	PINSEL_CFG_Type structPINEXT0;// PINEXT 2.10
+
+	PINSEL_CFG_Type structPINEXT0;// PINEXT 2.10. LED AZUL
 	structPINEXT0.Pinnum=10;
 	structPINEXT0.Portnum=2;
 	structPINEXT0.Funcnum=1;
 	structPINEXT0.Pinmode=0;//pull up
 	PINSEL_ConfigPin(&structPINEXT0);
 
-	PINSEL_CFG_Type structPINEXT1;// PINEXT 2.11
+	PINSEL_CFG_Type structPINEXT1;// PINEXT 2.11. LED ROJO
 	structPINEXT1.Pinnum=11;
 	structPINEXT1.Portnum=2;
 	structPINEXT1.Funcnum=1;
 	structPINEXT1.Pinmode=0;//pull up
 	PINSEL_ConfigPin(&structPINEXT1);
 
-	PINSEL_CFG_Type structPINMAT;// PIN MATCH MAT0.1, P3.26
-	structPINMAT.Pinnum=26;
-	structPINMAT.Portnum=3;
-	structPINMAT.Funcnum=2;
-	structPINMAT.Pinmode=0;//pull up
-	PINSEL_ConfigPin(&structPINMAT);
-
 	PINSEL_CFG_Type PinCfg;
-	//configuraci n pin de Tx y Rx
+	//configuracion pin de Tx y Rx
 	PinCfg.Funcnum = 1;
 	PinCfg.OpenDrain = 0;
 	PinCfg.Pinmode = 0;
@@ -122,36 +112,63 @@ void confPIN(){
 
 }
 
-void config_timer_0()
+void confTIMER1() // timer para mandar cada 1 segundo la tranmision uart
 {
 	TIM_TIMERCFG_Type    struct_config;
 	TIM_MATCHCFG_Type    struct_match;
 
-
 	struct_config.PrescaleOption    =    TIM_PRESCALE_TICKVAL;
 	struct_config.PrescaleValue     =    1;
 
-	struct_match.MatchChannel       =    1;
-	struct_match.IntOnMatch         =    DISABLE; //deshabilitamos las interrupciones por timer
+	struct_match.MatchChannel       =    0;
+	struct_match.IntOnMatch         =    ENABLE; //habilitamos las interrupciones por timer
 	struct_match.ResetOnMatch       =    ENABLE;//resetea el contador del timer cuando se produce un match
 	struct_match.StopOnMatch        =    DISABLE; //no detiene el contador del timer cuando se produce un match
-	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_TOGGLE;
+	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_NOTHING;
 
+	struct_match.MatchValue         =    25000000-1;//1 segundo
 
-
-	struct_match.MatchValue         =    25000000-1;
-
-	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &struct_config); //se prende el timer0, se configura la division del clock del periferico, y se
+	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &struct_config); //se prende el timer0, se configura la division del clock del periferico, y se
 	//configura el timer como modo temporizador y ademas se retesea el contador y se lo saca del reset
-	TIM_ConfigMatch(LPC_TIM0, &struct_match); //carga todas las configuraciones del struct_match en ls registros correspondientes
+	TIM_ConfigMatch(LPC_TIM1, &struct_match); //carga todas las configuraciones del struct_match en ls registros correspondientes
 
-	TIM_ResetCounter(LPC_TIM0);
-	TIM_Cmd(LPC_TIM0, ENABLE); //habilita el contador del timer y prescaler
+	TIM_ResetCounter(LPC_TIM1);
+	TIM_Cmd(LPC_TIM1, ENABLE); //habilita el contador del timer
+
+	NVIC_EnableIRQ(TIMER1_IRQn);
 
 	return;
 }
 
-void configADC()
+void confTIMER2()// timer para mandar cada 2 segundos la lectura del pin0.0, donde esta el sensor digital
+{
+	TIM_TIMERCFG_Type    struct_config;
+	TIM_MATCHCFG_Type    struct_match;
+
+	struct_config.PrescaleOption    =    TIM_PRESCALE_TICKVAL;
+	struct_config.PrescaleValue     =    1;
+
+	struct_match.MatchChannel       =    0;
+	struct_match.IntOnMatch         =    ENABLE; //habilitamos las interrupciones por timer
+	struct_match.ResetOnMatch       =    ENABLE;//resetea el contador del timer cuando se produce un match
+	struct_match.StopOnMatch        =    DISABLE; //no detiene el contador del timer cuando se produce un match
+	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_NOTHING;
+
+	struct_match.MatchValue         =    50000000-1;//2 segundos
+
+	TIM_Init(LPC_TIM2, TIM_TIMER_MODE, &struct_config); //se prende el timer0, se configura la division del clock del periferico, y se
+	//configura el timer como modo temporizador y ademas se retesea el contador y se lo saca del reset
+	TIM_ConfigMatch(LPC_TIM2, &struct_match); //carga todas las configuraciones del struct_match en ls registros correspondientes
+
+	TIM_ResetCounter(LPC_TIM2);
+	TIM_Cmd(LPC_TIM2, ENABLE); //habilita el contador del timer
+
+	NVIC_EnableIRQ(TIMER2_IRQn);
+
+	return;
+}
+
+void configADC()// convierte la señal analogica del sensor analogico,en digital
 {
 	///CONFIGURACION ADC: -----------------///
 	 //Nuestro CCLK es de 100MHz y configuramos el divisor de periferico a 8
@@ -161,38 +178,14 @@ void configADC()
 	 //12,5MHz/65 = 195312 Hz, siendo la frecuencia de trabajo maxima configurable
 	//-------------------------------------
 
-	ADC_Init(LPC_ADC, 40000); //ENCIENDO ADC
-	ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_0,ENABLE); //POR CANAL 0
-	//ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_1,ENABLE); //POR CANAL 1
-	ADC_StartCmd(LPC_ADC, ADC_START_ON_MAT01);    //START CON MATCH, DEBE MUESTREAR CADA 1 SEG
-	//ADC_EdgeStartConfig(LPC_ADC, ADC_START_ON_RISING); //Arranca por Mat0.1 en alto
-	ADC_EdgeStartConfig(LPC_ADC, ADC_START_ON_FALLING); //Arranca por Mat0.1 en bajo
-	ADC_BurstCmd(LPC_ADC, DISABLE);//Modo controlado
-	ADC_IntConfig(LPC_ADC, ADC_ADGINTEN, SET);//Activo las interrupciones
-
-	ADC_GlobalGetStatus(LPC_ADC, 1); //Bajo la bandera
-	NVIC_EnableIRQ(ADC_IRQn);
+	LPC_SC->PCLKSEL0 |=(3<<24);
+	ADC_Init(LPC_ADC, 100000); //ENCIENDO ADC
+	ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_2,ENABLE);
+	ADC_StartCmd(LPC_ADC, ADC_START_CONTINUOUS);//ADC_START_CONTINUOUS=0
+	ADC_BurstCmd(LPC_ADC, DISABLE);//Modo burst
 
 	return;
 }
-
-void ADC_IRQHandler() 	// PONER PARA QUE LANCE UART
-{
-	//static uint8_t *puntero=0;
-	ADC0Value = ADC_ChannelGetData(LPC_ADC, ADC_CHANNEL_0);
-	//ADC1Value = ADC_ChannelGetData(LPC_ADC, ADC_CHANNEL_1);
-
-	//*puntero=((ADC0Value>>4) & (0xFF));
-	//uint8_t puntero[3] = {ADC0Value,'\n','\r'};
-	//uint8_t info[]={0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39,0x30,'\n','\r'};
-	//UART_Send(LPC_UART2, puntero, 3, BLOCKING);
-
-	ADC_GlobalGetStatus(LPC_ADC, 1);
-
-	return;
-}
-
-
 
 void confUart(){
 	UART_CFG_Type UARTConfigStruct;//variable auxiliar. es una estructura que es utilizada por las funciones del driver  para mostrar/sacar valores para realizar la configuracion
@@ -201,13 +194,12 @@ void confUart(){
 	//inicializa perif rico
 	UART_Init(LPC_UART2, &UARTConfigStruct);
 
-	UART_FIFOConfigStructInit(&UARTFIFOConfigStruct);
-	//UARTFIFOConfigStruct.FIFO_DMAMode = ENABLE;        // Habilita la escritura de la FIFO por DMA
-	//UARTFIFOConfigStruct.FIFO_DMAMode = ENABLE;
-	//UARTFIFOConfigStruct.FIFO_Level = UART_FIFO_TRGLEV0;
-	//UARTFIFOConfigStruct.FIFO_ResetRxBuf = ENABLE;
-	//UARTFIFOConfigStruct.FIFO_ResetTxBuf = ENABLE;
-
+	//UART_FIFOConfigStructInit(&UARTFIFOConfigStruct);
+	UARTFIFOConfigStruct.FIFO_DMAMode = ENABLE;        // Habilita la escritura de la FIFO por DMA
+	UARTFIFOConfigStruct.FIFO_DMAMode = ENABLE;
+	UARTFIFOConfigStruct.FIFO_Level = UART_FIFO_TRGLEV0;
+	UARTFIFOConfigStruct.FIFO_ResetRxBuf = ENABLE;
+	UARTFIFOConfigStruct.FIFO_ResetTxBuf = ENABLE;
 
 	//Inicializa FIFO
 	UART_FIFOConfig(LPC_UART2, &UARTFIFOConfigStruct);//funcion que lleva a cabo la inicializacion
@@ -215,17 +207,18 @@ void confUart(){
 	UART_TxCmd(LPC_UART2, ENABLE);
 	return;
 }
+
 void confEXTINT(){
 	EXTI_Init();
 	EXTI_InitTypeDef structEXTINT0;
-	structEXTINT0.EXTI_Line=EXTI_EINT0;
+	structEXTINT0.EXTI_Line=EXTI_EINT0;//led azul
 	structEXTINT0.EXTI_Mode=EXTI_MODE_LEVEL_SENSITIVE;
 	structEXTINT0.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
 	EXTI_Config(&structEXTINT0);
 	EXTI_ClearEXTIFlag(EXTI_EINT0);//EINT0 ya q usamos p2.10
 
 	EXTI_InitTypeDef structEXTINT1;
-	structEXTINT1.EXTI_Line=EXTI_EINT1;
+	structEXTINT1.EXTI_Line=EXTI_EINT1;//led rojo
 	structEXTINT1.EXTI_Mode=EXTI_MODE_LEVEL_SENSITIVE;
 	structEXTINT1.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
 	EXTI_Config(&structEXTINT1);
@@ -235,59 +228,170 @@ void confEXTINT(){
 	NVIC_EnableIRQ(EINT1_IRQn);//EINT0 ya q usamos p2.11
 }
 
+void EINT0_IRQHandler(){//led azul
+	if(pul0==0){
+		pul0=1;
+	}else{
+		pul0=0;
+	}
 
-void EINT0_IRQHandler(){
-
-	GPIO_SetValue(1,PIN_20);
-	GPIO_ClearValue(1,PIN_21);
+	if(pul0){//pul0==1 apagado led
+		GPIO_ClearValue(1,PIN_20);
+	}else{//pul0==0 prendido led
+		GPIO_SetValue(1,PIN_20);
+	}
 
 	EXTI_ClearEXTIFlag(EXTI_EINT0);
 }
 
-void EINT1_IRQHandler(){
-
-	GPIO_SetValue(1,PIN_21);
-	GPIO_ClearValue(1,PIN_20);
+void EINT1_IRQHandler(){ //led rojo
+	if(pul1==0){
+		pul1=1;
+	}else{
+		pul1=0;
+	}
+	if(pul1){//pul0==1 apagado led
+		GPIO_ClearValue(1,PIN_21);
+	}else{//pul0==0 prendido led
+		GPIO_SetValue(1,PIN_21);
+	}
 
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 }
 
-//void ADC_IRQHandler() 	// PONER PARA QUE LANCE UART
-//{
-	//if(ADC_ChannelGetStatus(LPC_ADC,0,ADC_DATA_DONE)){
-	//ADC0Value = ADC_ChannelGetData(LPC_ADC, ADC_CHANNEL_0);
-	//uint8_t puntero0[3] = {ADC0Value,'\n','\r'};
-	//UART_Send(LPC_UART2, puntero0, 3, BLOCKING);
-	//}else if(LPC_ADC,1,ADC_DATA_DONE){
-	//ADC1Value = ADC_ChannelGetData(LPC_ADC, ADC_CHANNEL_1);
-	//uint8_t puntero1[3] = {ADC1Value,'\n','\r'};
-	//UART_Send(LPC_UART2, puntero1, 3, BLOCKING);
-	//}
-	//ADC_GlobalGetStatus(LPC_ADC, 1);
+void confDMA() // configuramos el canal para mandar los datos del sensor analogico por uart usando dma
+{
+	NVIC_DisableIRQ(DMA_IRQn);
 
-	//return;
-//}
+	GPDMA_Init();                // Inicializo el controlador de DMA
 
+	GPDMA_Channel_CFG_Type DMAUARTConfig;
+	DMAUARTConfig.ChannelNum = 1;
+	DMAUARTConfig.SrcMemAddr = (uint32_t)(valtosend);
+	DMAUARTConfig.DstMemAddr = 0;
+	DMAUARTConfig.TransferSize = sizeof(valtosend);
+	DMAUARTConfig.TransferWidth = 0;
+	DMAUARTConfig.TransferType = GPDMA_TRANSFERTYPE_M2P;
+	DMAUARTConfig.SrcConn = 0;
+	DMAUARTConfig.DstConn = GPDMA_CONN_UART2_Tx;
+	DMAUARTConfig.DMALLI = 0;
 
-//void createonda(){
-// for(uint8_t i=0;i<512;i--){
-//	wf[i]=512+i;
-//	wf[512+i]=i;
-//}
-    //para guardar los datos en la posicion de memoria correspondiente:
-//    uint32_t *puntero = wf;
-//    uint32_t *posicion_memoria = (uint32_t *)parte2mem; // parte2mem= 0x2007C000+0x2000;
+	GPDMA_Setup(&DMAUARTConfig);
 
-//    for (int i = 0; i < 1024; i++) {
-//        *(posicion_memoria + i) = *((uint32_t *)puntero + i);
-//    }
-//}
+	return;
+}
 
-//void dividir(){
-//    uint32_t *posicion_memoria = (uint32_t *)0x2007C000;
-//    for (uint32_t i = 0; i < (0x2000/4); i++) {// 0x2000/4 = cant de datos(muestras)
-//        *(posicion_memoria + i) = (*posicion_memoria + i)/4;
-//    }
-//}
+void confDMA2() // configuramos el canal para mandar los datos del sensor digital por uart usando dma
+{
 
-//*/
+	NVIC_DisableIRQ(DMA_IRQn);
+
+	GPDMA_Init();                // Inicializo el controlador de DMA
+
+	GPDMA_Channel_CFG_Type DMAUARTConfig;
+	DMAUARTConfig.ChannelNum = 2;
+	DMAUARTConfig.SrcMemAddr = (uint32_t)(sensordig);
+	DMAUARTConfig.DstMemAddr = 0;
+	DMAUARTConfig.TransferSize = sizeof(sensordig);
+	DMAUARTConfig.TransferWidth = 0;
+	DMAUARTConfig.TransferType = GPDMA_TRANSFERTYPE_M2P;
+	DMAUARTConfig.SrcConn = 0;
+	DMAUARTConfig.DstConn = GPDMA_CONN_UART2_Tx;
+	DMAUARTConfig.DMALLI = 0;
+
+	GPDMA_Setup(&DMAUARTConfig);
+
+	return;
+}
+
+void confDMA3() //// configuramos el canal para mandar los datos del ADC a memoria (un array)
+{
+	GPDMA_Channel_CFG_Type DMAConfig;
+
+	NVIC_DisableIRQ(DMA_IRQn);
+
+	GPDMA_Init();                // Inicializo el controlador de DMA
+
+	DMAConfig.ChannelNum = 3;
+	DMAConfig.SrcMemAddr = 0;
+	DMAConfig.DstMemAddr = (uint32_t)(valtosend);
+	DMAConfig.TransferSize = sizeof(valtosend);
+	DMAConfig.TransferWidth = 0;
+	DMAConfig.TransferType = GPDMA_TRANSFERTYPE_P2M;
+	DMAConfig.SrcConn = GPDMA_CONN_ADC;
+	DMAConfig.DstConn = 0;
+	DMAConfig.DMALLI = 0;
+
+	GPDMA_Setup(&DMAConfig);
+	NVIC_EnableIRQ(DMA_IRQn);
+
+	return;
+}
+
+void DMA_IRQHandler (){
+	if (GPDMA_IntGetStatus(GPDMA_STAT_INT, 3)){
+		if(GPDMA_IntGetStatus(GPDMA_STAT_INTTC, 3)){// Chequeo que la interrupcion sea por Terminal Count
+
+			GPDMA_ClearIntPending (GPDMA_STATCLR_INTTC, 3);
+
+			ADC_BurstCmd(LPC_ADC, 0);               // El ADC deja de convertir
+
+		}
+	}
+	return;
+}
+
+void TIMER1_IRQHandler()// handler del timer para mandar datos por uart. cada 1 segundo
+{
+	if(pul0==0){// osea si el led azul esta prendido
+		//-------- recibir del adc
+		ADC_BurstCmd(LPC_ADC, ENABLE);
+		confDMA3();
+		GPDMA_ChannelCmd(3, ENABLE);
+		//---------------------------------
+
+		//------- enviar por uart
+		confDMA();
+		GPDMA_ChannelCmd(1,ENABLE);
+		//--------------------------
+
+		//-------------------
+		   // ACA HABRIA QUE PONER PARA MANDAR POR LORA
+		//--------------
+	}
+	TIM_ClearIntPending(LPC_TIM1,TIM_MR0_INT);
+
+	return;
+}
+
+void TIMER2_IRQHandler()//2 segundos.hanndler del timer para mandar datos del sensor digital por uart
+						//y para activar el adc.
+{
+	if(pul1==0){// osea si el led rojo esta encendido
+
+		//------- para recibir datos del sensor
+		static uint8_t i =0;
+		//-------- cambiar esto:
+		GPIO_SetValue(0,0);// para hacer una prueba simulacion que ingresa un 1
+		//---------------------------
+		valuesensor=GPIO_ReadValue(0)&(1<<0);//para obtener el valor del pin0.0
+		sensordig[i]=valuesensor;
+		i++;
+		if(i==sizeof(sensordig)){
+			i=0;
+		}
+		//---------------------------------------
+
+		//-- para enviar los datos del sensor por uart
+		confDMA2();
+		GPDMA_ChannelCmd(2,ENABLE);
+		//---------------------------------------------
+
+		//-------------------
+		   // ACA HABRIA QUE PONER PARA MANDAR POR LORA
+		//--------------
+	}
+	TIM_ClearIntPending(LPC_TIM2,TIM_MR0_INT);
+
+	return;
+}
