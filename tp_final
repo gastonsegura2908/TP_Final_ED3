@@ -1,7 +1,6 @@
-
-// TRABAJO TP FINAL ELECTRONICA DIGITAL
-
-///*
+/*	TRABAJO TP FINAL ELECTRONICA DIGITAL
+*	GRUPO 10
+*/ 
 
 #include "LPC17xx.h"
 #include "lpc17xx_dac.h"
@@ -12,23 +11,24 @@
 #include "lpc17xx_exti.h"
 #include "lpc17xx_gpio.h"
 #include "lpc17xx_uart.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
 #include <stdint.h>
-#include<stdbool.h>// para booleano
+#include <stdbool.h>	// para booleano
 
 #define PIN_20 ((uint32_t)(1<<20))
 #define PIN_21 ((uint32_t)(1<<21))
 
-volatile uint16_t ValRecHum[10];//valores recibidos desde el adc//++++++++++++
-volatile uint8_t ValSentHum[1]; //valor a enviar por transmision ++++++++++++++++++++++++++++++++++++++++
+volatile uint16_t ValRecHum[10];//valores recibidos desde el adc
+volatile uint8_t ValSentHum[1]; //valor a enviar por transmision
 
-uint8_t señalHum[]={0x48,'\n','\r'};//0x48 =H .+++++++++++++++++++ para sincronizar con la app de matalb
-uint8_t señalTem[]={0x31,'\n','\r'};//0x54 =T .+++++++++++++++++++ para sincronizar con la app de matalb
+uint8_t señalHum[]={0x48,'\n','\r'};//0x48 =H para sincronizar con la app de matalb
+uint8_t señalTem[]={0x31,'\n','\r'};//0x54 =T para sincronizar con la app de matalb
 
-volatile uint8_t ValRecTem[10]; //+++++++++++++++++++++++++++++++
-volatile uint8_t ValSentTem[1]; //+++++++++++++++++++++++++
+volatile uint8_t ValRecTem[10];
+volatile uint8_t ValSentTem[1];
 
 uint8_t pul0=1;
 uint8_t pul1=1;
@@ -289,9 +289,9 @@ void confDMA() // configuramos el canal para mandar los datos del sensor analogi
 
 	GPDMA_Channel_CFG_Type DMAUARTConfig;
 	DMAUARTConfig.ChannelNum = 1;
-	DMAUARTConfig.SrcMemAddr = (uint32_t)(ValSentHum); //++++++++++++++++++++++++++++++
+	DMAUARTConfig.SrcMemAddr = (uint32_t)(ValSentHum);
 	DMAUARTConfig.DstMemAddr = 0;
-	DMAUARTConfig.TransferSize = sizeof(ValSentHum); //++++++++++++++++++++++++
+	DMAUARTConfig.TransferSize = sizeof(ValSentHum);
 	DMAUARTConfig.TransferWidth = 0;
 	DMAUARTConfig.TransferType = GPDMA_TRANSFERTYPE_M2P;
 	DMAUARTConfig.SrcConn = 0;
@@ -312,9 +312,9 @@ void confDMA2() // configuramos el canal para mandar los datos del sensor analog
 
 	GPDMA_Channel_CFG_Type DMAUARTConfig;
 	DMAUARTConfig.ChannelNum = 2;
-	DMAUARTConfig.SrcMemAddr = (uint32_t)(ValSentTem);//+++++++++++++++
+	DMAUARTConfig.SrcMemAddr = (uint32_t)(ValSentTem);
 	DMAUARTConfig.DstMemAddr = 0;
-	DMAUARTConfig.TransferSize = sizeof(ValSentTem); //+++++++++++++++++++++++++++
+	DMAUARTConfig.TransferSize = sizeof(ValSentTem); 
 	DMAUARTConfig.TransferWidth = 0;
 	DMAUARTConfig.TransferType = GPDMA_TRANSFERTYPE_M2P;
 	DMAUARTConfig.SrcConn = 0;
@@ -328,7 +328,6 @@ void confDMA2() // configuramos el canal para mandar los datos del sensor analog
 
 void confDMA3() //// configuramos el canal para mandar los datos del ADC (humedad) a memoria (un array)
 {
-	//++++++++++++++++++++++++++++
 	GPDMA_LLI_Type LLI1;
 		LLI1.SrcAddr = (uint32_t) &LPC_ADC->ADDR3; // fuente es el adc canal 3
 		LLI1.DstAddr = (uint32_t) ValRecHum;
@@ -337,7 +336,7 @@ void confDMA3() //// configuramos el canal para mandar los datos del ADC (humeda
 					   | (1<<18) //source width 16 bits
 					   | (1<<21) //dest width 16 bits
 					   | (1<<27); //destino increment
-		//+++++++++++++++++++++++++++
+		
 	GPDMA_Channel_CFG_Type DMAConfig;
 
 	NVIC_DisableIRQ(DMA_IRQn);
@@ -346,13 +345,13 @@ void confDMA3() //// configuramos el canal para mandar los datos del ADC (humeda
 
 	DMAConfig.ChannelNum = 3;
 	DMAConfig.SrcMemAddr = 0;
-	DMAConfig.DstMemAddr = (uint32_t)(ValRecHum);//+++++++++++++++++++
-	DMAConfig.TransferSize = sizeof(ValRecHum);//+++++++++++++++++++++++
+	DMAConfig.DstMemAddr = (uint32_t)(ValRecHum);
+	DMAConfig.TransferSize = sizeof(ValRecHum);
 	DMAConfig.TransferWidth = 0;
 	DMAConfig.TransferType = GPDMA_TRANSFERTYPE_P2M;
 	DMAConfig.SrcConn = GPDMA_CONN_ADC;
 	DMAConfig.DstConn = 0;
-	DMAConfig.DMALLI = (uint32_t) &LLI1;//+++++++++++++++++++
+	DMAConfig.DMALLI = (uint32_t) &LLI1;
 
 	GPDMA_Setup(&DMAConfig);
 	NVIC_EnableIRQ(DMA_IRQn);
@@ -362,7 +361,6 @@ void confDMA3() //// configuramos el canal para mandar los datos del ADC (humeda
 
 void confDMA4() //// configuramos el canal para mandar los datos del ADC(temp) a memoria (un array)
 {
-	//++++++++++++++++++++++++++++
 	GPDMA_LLI_Type LLI1;
 		LLI1.SrcAddr = (uint32_t) &LPC_ADC->ADDR4; // fuente es el adc canal 3
 		LLI1.DstAddr = (uint32_t) ValRecTem;
@@ -390,7 +388,7 @@ void confDMA4() //// configuramos el canal para mandar los datos del ADC(temp) a
 
 	GPDMA_Setup(&DMAConfig);
 	NVIC_EnableIRQ(DMA_IRQn);
-	//+++++++++++++++++++++++++++++++++
+	
 	return;
 }
 
@@ -428,19 +426,19 @@ void TIMER1_IRQHandler()// handler del timer para mandar datos por uart. cada 1 
 		//---------------------------------
 
 
-		//+++++++++++++++++++++++ parte nueva:
+		// Parte nueva:
 		val=0;
 		for(uint8_t i=0;i<10;i++){
 			val=val + ValRecHum[i];
 		}
 		val=(val>>4);// corremos 4 lugares ya q el adc es de 12 y el uart manda de 8
 
-		//val = ; // todo . formula para obtener el valor de humedad
+		//val = 100 - (hum_suelo * 100) / 1023; // TODO formula para obtener el valor de humedad (de valor a porcentaje)
 
 		ValSentHum[0]=val;
 
 		UART_Send(LPC_UART2,señalHum,sizeof(señalHum), BLOCKING);
-		//+++++++++++++++++++++++++++++++++++++++++
+		
 
 
 		//------- enviar por uart
@@ -470,7 +468,7 @@ void TIMER2_IRQHandler()//2 segundos.hanndler del timer para mandar datos del se
 		//---------------------------------
 
 
-		//+++++++++++++++++++++++ parte nueva:
+		// Parte nueva:
 		val=0;
 		for(uint8_t i=0;i<10;i++){
 			val=val + ValRecTem[i];
@@ -481,11 +479,11 @@ void TIMER2_IRQHandler()//2 segundos.hanndler del timer para mandar datos del se
 
 		ValSentTem[0]=val;
 
-		UART_Send(LPC_UART2,señalTem, sizeof(señalTem), BLOCKING);//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+		UART_Send(LPC_UART2,señalTem, sizeof(señalTem), BLOCKING);
 
 		//------- enviar por uart
-		confDMA2(); //+++++++++++++++++++++++++
-		GPDMA_ChannelCmd(2,ENABLE);//++++++++++++++++++
+		confDMA2();
+		GPDMA_ChannelCmd(2,ENABLE);
 		//--------------------------
 
 		//-------------------
@@ -496,7 +494,3 @@ void TIMER2_IRQHandler()//2 segundos.hanndler del timer para mandar datos del se
 
 	return;
 }
-
-
-
-
