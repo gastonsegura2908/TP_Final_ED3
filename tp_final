@@ -1,8 +1,6 @@
 
 // TRABAJO TP FINAL ELECTRONICA DIGITAL 3
 
-///*
-
 #include "LPC17xx.h"
 #include "lpc17xx_dac.h"
 #include "lpc17xx_adc.h"
@@ -422,11 +420,15 @@ void TIMER2_IRQHandler()//2 segundos.hanndler del timer para mandar datos de los
 
 		//----------- ENVIO LORA
 		if(pul2==0){ // si pulsador de led blanco esta activo
-			if(pul0==0){//osea si el led azul esta prendido
+			if(pul0==0 && pul1==0){
 				confDMA5();
 				GPDMA_ChannelCmd(5,ENABLE);
-			}
-			if(pul1==0){ //osea si el led rojo esta prendido
+				confDMA6();
+				GPDMA_ChannelCmd(6,ENABLE);
+			}else if(pul0==0){//osea si el led azul esta prendido
+				confDMA5();
+				GPDMA_ChannelCmd(5,ENABLE);
+			}else if(pul1==0){ //osea si el led rojo esta prendido
 				confDMA6();
 				GPDMA_ChannelCmd(6,ENABLE);
 			}
