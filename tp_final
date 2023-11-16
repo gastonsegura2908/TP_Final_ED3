@@ -13,8 +13,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
-#include <stdint.h>
-#include<stdbool.h>// para booleano
 
 #define PIN_20 ((uint32_t)(1<<20))
 #define PIN_21 ((uint32_t)(1<<21))
@@ -33,7 +31,7 @@ uint16_t ADC5Value=0;//resultado conversion temperatura
 uint16_t ADC4Value=0;//resultado conversion humedad
 
 	void confPIN();
-	void configADC();// convierte la señal analogica del sensor analogico,en digital
+	void configADC();
 
 	void confEXTINT();
 	void confUart();
@@ -52,7 +50,7 @@ int main(){
 	GPIO_ClearValue(2,PIN_6);
 
 	confPIN(); //configuramos todos los pines
-	confEXTINT();
+	confEXTINT();//configuramos las interrupciones externa
 
 	confUart();
 	configADC();
