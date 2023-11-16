@@ -22,18 +22,17 @@
 #define PIN_21 ((uint32_t)(1<<21))
 #define PIN_6 ((uint32_t)(1<<6))
 
-volatile uint16_t ValRecHum[10];//valores recibidos desde el adc
-volatile uint8_t ValSentHum[1]; //valor a enviar por transmision
-
 uint8_t señalHum[]={0x48,'\n','\r'};//0x48 =H . para sincronizar con la app de matalb
 uint8_t señalTem[]={0x54,'\n','\r'};//0x54 =T . para sincronizar con la app de matalb
 
-volatile uint16_t ValRecTem[10];
-volatile uint8_t ValSentTem[1];
+volatile uint8_t ValSentHum[1]; //valor a enviar por transmision
+volatile uint8_t ValSentTem[1];//valor a enviar por transmision
 
 uint8_t pul0=1;
 uint8_t pul1=1;
 uint8_t pul2=1;
+uint16_t ADC5Value=0;//resultado conversion temperatura
+uint16_t ADC4Value=0;//resultado conversion humedad
 
 	void confPIN();
 	void configADC();// convierte la señal analogica del sensor analogico,en digital
@@ -41,15 +40,12 @@ uint8_t pul2=1;
 	void confEXTINT();
 	void confUart();
 
-	void confTIMER1();// timer para mandar cada 2 segundos la tranmision uart de los datos del sensor analogico
-	void confTIMER2();// timer para mandar cada 2 segundos la tranmision uart de los datos del sensor digital
+	void confTIMER2();// timer para mandar cada 2 segundos la tranmision uart de los datos de los sensores analogicos
 
-	void confDMA();// configuramos el canal para mandar los datos sensor analogico por uart usando dma
-	void confDMA2();// configuramos el canal para mandar los datos sensor digital por uart usando dma
-	void confDMA3();
-	void confDMA4();
-	void confDMA5();
-	void confDMA6();
+	void confDMA();// configuramos el canal para mandar los datos sensor analogico de HUMEDAD por uart a pc usando dma
+	void confDMA2();// configuramos el canal para mandar los datos sensor analogico de TEMP por uart a lora usando dma
+	void confDMA5();// configuramos el canal para mandar los datos sensor analogico de HUMEDAD por uart a pc usando dma
+	void confDMA6();// configuramos el canal para mandar los datos sensor analogico de TEMP por uart a lora usando dma
 
 int main(){
 	uint32_t value=0;// sirve para el breakpoint de despues
@@ -64,15 +60,11 @@ int main(){
 	configADC();
 	confDMA();
 	confDMA2();
-	confDMA3();
-	confDMA4();
 	confDMA5();
 	confDMA6();
 
-	confTIMER1();
 	confTIMER2();
 
-	TIM_ResetCounter(LPC_TIM1);
 	TIM_ResetCounter(LPC_TIM2);
 
 	while(1){
@@ -87,21 +79,21 @@ void confPIN(){
 	GPIO_SetDir(1,PIN_21,1);
 	GPIO_SetDir(2,PIN_6,1);
 
-	PINSEL_CFG_Type structPINADC3;// ADC0.3 - sensor de humedad
-	structPINADC3.Pinnum=26;
-	structPINADC3.Portnum=0;
-	structPINADC3.Funcnum=1;
-	structPINADC3.Pinmode=2;
-	PINSEL_ConfigPin(&structPINADC3);
+	PINSEL_CFG_Type structPINADC5;// ADC0.5 - sensor de temperatura
+	structPINADC5.Pinnum=31;
+	structPINADC5.Portnum=1;
+	structPINADC5.Funcnum=3;
+	structPINADC5.Pinmode=2;
+	PINSEL_ConfigPin(&structPINADC5);
 
-	PINSEL_CFG_Type structPINADC4;// ADC0.4 - sensor de temperatura
+	PINSEL_CFG_Type structPINADC4;// ADC0.4 - sensor de humedad
 	structPINADC4.Pinnum=30;
 	structPINADC4.Portnum=1;
 	structPINADC4.Funcnum=3;
 	structPINADC4.Pinmode=2;
 	PINSEL_ConfigPin(&structPINADC4);
 
-	PINSEL_CFG_Type structPINEXT0;// PINEXT 2.10. LED AZUL
+	PINSEL_CFG_Type structPINEXT0;// PINEXT 2.10. LED azul
 	structPINEXT0.Pinnum=10;
 	structPINEXT0.Portnum=2;
 	structPINEXT0.Funcnum=1;
@@ -115,7 +107,7 @@ void confPIN(){
 	structPINEXT1.Pinmode=0;//pull up
 	PINSEL_ConfigPin(&structPINEXT1);
 
-	PINSEL_CFG_Type structPINEXT2;// PINEXT 2.12. LED
+	PINSEL_CFG_Type structPINEXT2;// PINEXT 2.12. LED BLANCO
 	structPINEXT2.Pinnum=12;
 	structPINEXT2.Portnum=2;
 	structPINEXT2.Funcnum=1;
@@ -148,35 +140,7 @@ void confPIN(){
 
 }
 
-void confTIMER1() // timer para mandar cada 1 segundo la tranmision uart
-{
-	TIM_TIMERCFG_Type    struct_config;
-	TIM_MATCHCFG_Type    struct_match;
-
-	struct_config.PrescaleOption    =    TIM_PRESCALE_TICKVAL;
-	struct_config.PrescaleValue     =    1;
-
-	struct_match.MatchChannel       =    0;
-	struct_match.IntOnMatch         =    ENABLE; //habilitamos las interrupciones por timer
-	struct_match.ResetOnMatch       =    ENABLE;//resetea el contador del timer cuando se produce un match
-	struct_match.StopOnMatch        =    DISABLE; //no detiene el contador del timer cuando se produce un match
-	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_NOTHING;
-
-	struct_match.MatchValue         =    25000000-1;//1 segundo
-
-	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &struct_config); //se prende el timer1, se configura la division del clock del periferico, y se
-	//configura el timer como modo temporizador y ademas se retesea el contador y se lo saca del reset
-	TIM_ConfigMatch(LPC_TIM1, &struct_match); //carga todas las configuraciones del struct_match en ls registros correspondientes
-
-	TIM_ResetCounter(LPC_TIM1);
-	TIM_Cmd(LPC_TIM1, ENABLE); //habilita el contador del timer
-
-	NVIC_EnableIRQ(TIMER1_IRQn);
-
-	return;
-}
-
-void confTIMER2()// timer para mandar cada 2 segundos la lectura del ADC0.4, donde esta el sensor analogico de temp
+void confTIMER2()// timer para ENVIAR cada 2 segundos los datos de los sensores
 {
 	TIM_TIMERCFG_Type    struct_config;
 	TIM_MATCHCFG_Type    struct_match;
@@ -204,7 +168,7 @@ void confTIMER2()// timer para mandar cada 2 segundos la lectura del ADC0.4, don
 	return;
 }
 
-void configADC()// convierte la señal analogica del sensor analogico,en digital
+void configADC()// convierte la señal analogica de los sensores analogicos,en digital
 {
 	///CONFIGURACION ADC: -----------------///
 	 //Nuestro CCLK es de 100MHz y configuramos el divisor de periferico a 8
@@ -214,12 +178,25 @@ void configADC()// convierte la señal analogica del sensor analogico,en digital
 	 //12,5MHz/65 = 195312 Hz, siendo la frecuencia de trabajo maxima configurable
 	//-------------------------------------
 
-	LPC_SC->PCLKSEL0 |=(3<<24);
-	ADC_Init(LPC_ADC, 100000); //ENCIENDO ADC
-	ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_3,DISABLE); // todo
-	ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,DISABLE); // todo
-	ADC_StartCmd(LPC_ADC, ADC_START_CONTINUOUS);//ADC_START_CONTINUOUS=0
-	ADC_BurstCmd(LPC_ADC, DISABLE);//Modo burst
+	//LPC_SC->PCLKSEL0 |=(3<<24);
+	//ADC_Init(LPC_ADC, 200000); //ENCIENDO ADC
+	//ADC_IntConfig(LPC_ADC,ADC_ADINTEN4,SET);
+	//ADC_IntConfig(LPC_ADC,ADC_ADINTEN5,SET);
+	//ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,ENABLE);
+	//ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_5,ENABLE);
+	//ADC_StartCmd(LPC_ADC, ADC_START_CONTINUOUS);//ADC_START_CONTINUOUS=0
+	//ADC_BurstCmd(LPC_ADC, ENABLE);//Modo burst
+
+	LPC_SC->PCONP |= (1 << 12);
+	LPC_ADC->ADCR |= (1 << 21); //habilita el ADC
+	LPC_SC->PCLKSEL0 |= (3<<24);  //CCLK/8
+	LPC_ADC->ADCR &=~(255 << 8);  //limpiamos
+	LPC_ADC->ADCR |= (1 << 4)|(1 << 5);   // canales
+	LPC_ADC->ADCR |= (1 << 16);   // burst
+	LPC_PINCON->PINMODE3 |= (1<<29)|(1<<31); //ni pull-up ni pull-down.
+	LPC_ADC->ADINTEN |= (1<<4) |(1 << 5);// habilitamos interrupciones
+	LPC_ADC->ADINTEN &=~ (1<<8); // habilitamos q interrumpa solo canal canal habilitado
+	NVIC_EnableIRQ(ADC_IRQn);
 
 	return;
 }
@@ -261,7 +238,7 @@ void confEXTINT(){
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 
 	EXTI_InitTypeDef structEXTINT2;
-	structEXTINT2.EXTI_Line=EXTI_EINT2;//led
+	structEXTINT2.EXTI_Line=EXTI_EINT2;//led blanco
 	structEXTINT2.EXTI_Mode=EXTI_MODE_LEVEL_SENSITIVE;
 	structEXTINT2.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
 	EXTI_Config(&structEXTINT2);
@@ -303,7 +280,7 @@ void EINT1_IRQHandler(){ //led rojo
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 }
 
-void EINT2_IRQHandler(){ //led
+void EINT2_IRQHandler(){ //led blanco
 	if(pul2==0){
 		pul2=1;
 	}else{
@@ -318,7 +295,7 @@ void EINT2_IRQHandler(){ //led
 	EXTI_ClearEXTIFlag(EXTI_EINT2);
 }
 
-void confDMA() // configuramos el canal para mandar los datos del sensor analogico de humedad por uart usando dma
+void confDMA() // configuramos el canal para mandar los datos sensor analogico de HUMEDAD por uart a pc usando dma
 {
 	NVIC_DisableIRQ(DMA_IRQn);
 
@@ -340,7 +317,7 @@ void confDMA() // configuramos el canal para mandar los datos del sensor analogi
 	return;
 }
 
-void confDMA2() // configuramos el canal para mandar los datos del sensor analog de temp por uart usando dma
+void confDMA2() // configuramos el canal para mandar los datos sensor analogico de TEMP por uart a lora usando dma
 {
 
 	NVIC_DisableIRQ(DMA_IRQn);
@@ -363,75 +340,7 @@ void confDMA2() // configuramos el canal para mandar los datos del sensor analog
 	return;
 }
 
-void confDMA3() //// configuramos el canal para mandar los datos del ADC (humedad) a memoria (un array)
-{
-
-	GPDMA_LLI_Type LLI1;
-		LLI1.SrcAddr = (uint32_t) &LPC_ADC->ADDR3; // fuente es el adc canal 3
-		LLI1.DstAddr = (uint32_t) ValRecHum;
-		LLI1.NextLLI = 0;
-		LLI1.Control = sizeof(ValRecHum)
-					   | (1<<18) //source width 16 bits
-					   | (1<<21) //dest width 16 bits
-					   | (1<<27); //destino increment
-
-	GPDMA_Channel_CFG_Type DMAConfig;
-
-	NVIC_DisableIRQ(DMA_IRQn);
-
-	GPDMA_Init();                // Inicializo el controlador de DMA
-
-	DMAConfig.ChannelNum = 3;
-	DMAConfig.SrcMemAddr = 0;
-	DMAConfig.DstMemAddr = (uint32_t)(ValRecHum);
-	DMAConfig.TransferSize = sizeof(ValRecHum);
-	DMAConfig.TransferWidth = 0;
-	DMAConfig.TransferType = GPDMA_TRANSFERTYPE_P2M;
-	DMAConfig.SrcConn = GPDMA_CONN_ADC;
-	DMAConfig.DstConn = 0;
-	DMAConfig.DMALLI = (uint32_t) &LLI1;
-
-	GPDMA_Setup(&DMAConfig);
-	NVIC_EnableIRQ(DMA_IRQn);
-
-	return;
-}
-
-void confDMA4() //// configuramos el canal para mandar los datos del ADC(temp) a memoria (un array)
-{
-
-	GPDMA_LLI_Type LLI1;
-		LLI1.SrcAddr = (uint32_t) &LPC_ADC->ADDR4; // fuente es el adc canal 4
-		LLI1.DstAddr = (uint32_t) ValRecTem;
-		LLI1.NextLLI = 0;
-		LLI1.Control = sizeof(ValRecTem)
-					   | (1<<18) //source width 16 bits
-					   | (1<<21) //dest width 16 bits
-					   | (1<<27); //destino increment
-
-	GPDMA_Channel_CFG_Type DMAConfig;
-
-	NVIC_DisableIRQ(DMA_IRQn);
-
-	GPDMA_Init();                // Inicializo el controlador de DMA
-
-	DMAConfig.ChannelNum = 4;
-	DMAConfig.SrcMemAddr = 0;
-	DMAConfig.DstMemAddr = (uint32_t)(ValRecTem);
-	DMAConfig.TransferSize = sizeof(ValRecTem);
-	DMAConfig.TransferWidth = 0;
-	DMAConfig.TransferType = GPDMA_TRANSFERTYPE_P2M;
-	DMAConfig.SrcConn = GPDMA_CONN_ADC;
-	DMAConfig.DstConn = 0;
-	DMAConfig.DMALLI = (uint32_t) &LLI1;
-
-	GPDMA_Setup(&DMAConfig);
-	NVIC_EnableIRQ(DMA_IRQn);
-
-	return;
-}
-
-void confDMA5() // configuramos el canal para mandar los datos del sensor analogico de humedad por uart al arduino
+void confDMA5() // configuramos el canal para mandar los datos sensor analogico de HUMEDAD por uart a pc usando dma
 {
 	NVIC_DisableIRQ(DMA_IRQn);
 
@@ -453,7 +362,7 @@ void confDMA5() // configuramos el canal para mandar los datos del sensor analog
 	return;
 }
 
-void confDMA6() // configuramos el canal para mandar los datos del sensor analogico de temperatura por uart al arduino
+void confDMA6() // configuramos el canal para mandar los datos sensor analogico de TEMP por uart a lora usando dma
 {
 	NVIC_DisableIRQ(DMA_IRQn);
 
@@ -475,113 +384,50 @@ void confDMA6() // configuramos el canal para mandar los datos del sensor analog
 	return;
 }
 
-void DMA_IRQHandler (){// todo . ver si esto esta bien al usar los dos sensores al mismo tiempo
-	if (GPDMA_IntGetStatus(GPDMA_STAT_INT, 3)){
-		if(GPDMA_IntGetStatus(GPDMA_STAT_INTTC, 3)){// Chequeo que la interrupcion sea por Terminal Count
 
-			GPDMA_ClearIntPending (GPDMA_STATCLR_INTTC, 3);
-
-			ADC_BurstCmd(LPC_ADC, 0);               // El ADC deja de convertir
-			ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_3,DISABLE);
-		}
-	}else if(GPDMA_IntGetStatus(GPDMA_STAT_INT, 4)){
-		if(GPDMA_IntGetStatus(GPDMA_STAT_INTTC, 4)){// Chequeo que la interrupcion sea por Terminal Count
-
-			GPDMA_ClearIntPending (GPDMA_STATCLR_INTTC, 4);
-
-			ADC_BurstCmd(LPC_ADC, 0);               // El ADC deja de convertir
-			ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,DISABLE);
-		}
+void ADC_IRQHandler(){
+	if(LPC_ADC->ADDR5 &(1<<31)){ // bit DONE del canal 5
+		ADC5Value = ((LPC_ADC->ADDR5)>>4) & 0xFFF;
+		ADC5Value = 100 - (ADC5Value * 100) / 1023; //obtenemos el valor de temperatura
+		ValSentHum[0]=ADC5Value;
+	}else if(LPC_ADC->ADDR4 &(1<<31)){  // bit DONE del canal 4
+		ADC4Value = ((LPC_ADC->ADDR4)>>4) & 0xFFF;
+		ADC4Value= (ADC4Value*5*100)/4095; // obtenemos el valor de humedad
+		ValSentTem[0]=ADC4Value;
 	}
-	return;
 }
 
-void TIMER1_IRQHandler()// handler del timer para mandar datos por uart. cada 1 segundo
-					    //y para activar el adc para humedad.
+void TIMER2_IRQHandler()//2 segundos.hanndler del timer para mandar datos de los sensores digital por uart
+
 {
-	static uint16_t val=0;
-	if(pul0==0){// osea si el led azul esta prendido
-
-		//-------- recibir del adc
-		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_3,ENABLE);
-		ADC_BurstCmd(LPC_ADC, ENABLE);
-		confDMA3();
-		GPDMA_ChannelCmd(3, ENABLE);
-		//---------------------------------
-
-		val=0;
-		for(uint8_t i=0;i<10;i++){
-			val=val + ValRecHum[i];
+		//------- ENVIO uart
+		if(pul0==0){
+			UART_Send(LPC_UART2,señalHum,sizeof(señalHum), BLOCKING);
+			confDMA();
+			GPDMA_ChannelCmd(1,ENABLE);
+		}else if(pul1==0){
+			UART_Send(LPC_UART2,señalTem, sizeof(señalTem), BLOCKING);
+			confDMA2();
+			GPDMA_ChannelCmd(2,ENABLE);
 		}
-		val=val/5;// todo
-		val=(val>>4);// corremos 4 lugares ya q el adc es de 12 y el uart manda de 8
-
-		val = 100 - (val * 100) / 1023; //formula para calibrar el valor de humedad
-
-		ValSentHum[0]=val;
-
-		UART_Send(LPC_UART2,señalHum,sizeof(señalHum), BLOCKING);
-
-		//------- enviar por uart
-		confDMA();
-		GPDMA_ChannelCmd(1,ENABLE);
 		//--------------------------
 
-		//--------------LORA
-			if(pul2==0){ //osea si el led esta prendido
+
+		//----------- ENVIO LORA
+		if(pul2==0){ // si pulsador de led blanco esta activo
+			if(pul0==0){//osea si el led azul esta prendido
 				confDMA5();
 				GPDMA_ChannelCmd(5,ENABLE);
 			}
-		//--------------
-	}
-	TIM_ClearIntPending(LPC_TIM1,TIM_MR0_INT);
-
-	return;
-}
-
-void TIMER2_IRQHandler()//2 segundos.hanndler del timer para mandar datos del sensor digital por uart
-						//y para activar el adc para temperatura.
-{
-	static uint16_t val=0;
-	if(pul1==0){// osea si el led rojo esta encendido
-
-		//-------- recibir del adc
-		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,ENABLE);
-		ADC_BurstCmd(LPC_ADC, ENABLE);
-		confDMA4();
-		GPDMA_ChannelCmd(4, ENABLE);
-		//---------------------------------
-
-		val=0;
-		for(uint8_t i=0;i<10;i++){
-			val=val + ValRecTem[i];
-		}
-		val=val/5;// todo
-		val=(val>>4);// corremos 4 lugares ya q el adc es de 12 y el uart manda de 8
-
-		val= (val*5*100)/4095; // obtenemos el valor de temperatura
-
-		ValSentTem[0]=val;
-
-		UART_Send(LPC_UART2,señalTem, sizeof(señalTem), BLOCKING);//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
-
-		//------- enviar por uart
-		confDMA2();
-		GPDMA_ChannelCmd(2,ENABLE);
-		//--------------------------
-
-		//----------- LORA
-		if(pul2==0){ //osea si el led esta prendido
-			confDMA6();
-			GPDMA_ChannelCmd(6,ENABLE);
+			if(pul1==0){ //osea si el led rojo esta prendido
+				confDMA6();
+				GPDMA_ChannelCmd(6,ENABLE);
+			}
 		}
 		//--------------
-	}
+
 	TIM_ClearIntPending(LPC_TIM2,TIM_MR0_INT);
 
 	return;
 }
-
-//*/
-
 
