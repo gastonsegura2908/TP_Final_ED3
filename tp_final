@@ -401,7 +401,14 @@ void TIMER2_IRQHandler()//2 segundos.hanndler del timer para mandar datos de los
 
 {
 		//------- ENVIO uart
-		if(pul0==0){
+		if(pul0==0 && pul1==0){ // los dos pulsadores activos
+			UART_Send(LPC_UART2,señalHum,sizeof(señalHum), BLOCKING);
+			confDMA();
+			GPDMA_ChannelCmd(1,ENABLE);
+			UART_Send(LPC_UART2,señalTem, sizeof(señalTem), BLOCKING);
+			confDMA2();
+			GPDMA_ChannelCmd(2,ENABLE);
+		}else if(pul0==0){
 			UART_Send(LPC_UART2,señalHum,sizeof(señalHum), BLOCKING);
 			confDMA();
 			GPDMA_ChannelCmd(1,ENABLE);
