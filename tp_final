@@ -46,11 +46,11 @@ char resultadoTem[]=" ";// todo
 //volatile uint8_t ValSentTem[]={'9','2','\r','\n'};//valor a enviar por transmision  //+++++++++
 //volatile uint8_t prueba[]={1,10,200};
 
-uint8_t pul0=0;// pulsador para cambiar de modo
+uint8_t pul0;// pulsador para cambiar de modo
 
 uint8_t SelSensor;// con 0 los dos apagados,con 1 usamos el sensor de humedad y con 2 el de temperatura. se cambia con pulsador y con uart
 
-uint8_t flagpul=0;//para antirebote
+uint8_t flagpul;//para antirebote
 
 	void confPIN();
 	void configADC(uint8_t num);
@@ -76,6 +76,8 @@ int main(){
 	GPIO_ClearValue(1,PIN_21);
 
 	SelSensor=2;// todo
+	pul0=1;
+	flagpul=0;
 
 	confPIN(); //configuramos todos los pines
 	confEXTINT();//configuramos las interrupciones externa
@@ -87,10 +89,10 @@ int main(){
 
 	confTIMER2();
 	confTIMER1();// antirebote
-	confTIMER0();//enviar los datos
+	//confTIMER0();//enviar los datos
 
 	TIM_ResetCounter(LPC_TIM2);
-	TIM_ResetCounter(LPC_TIM1);
+	//TIM_ResetCounter(LPC_TIM1);
 	TIM_ResetCounter(LPC_TIM0);
 
 	while(1){
@@ -139,32 +141,6 @@ void confPIN(){
 
 }
 
-void confTIMER1(){// antirebote de 0.5 segundos
-	TIM_TIMERCFG_Type    struct_config;
-	TIM_MATCHCFG_Type    struct_match;
-
-	struct_config.PrescaleOption    =    TIM_PRESCALE_TICKVAL;
-	struct_config.PrescaleValue     =    1;
-
-	struct_match.MatchChannel       =    0;
-	struct_match.IntOnMatch         =    ENABLE; //habilitamos las interrupciones por timer
-	struct_match.ResetOnMatch       =    ENABLE;//resetea el contador del timer cuando se produce un match
-	struct_match.StopOnMatch        =    DISABLE; //se detiene el contador del timer cuando se produce un match
-	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_NOTHING;
-
-	struct_match.MatchValue         =    12500000-1;//0.5 segundos
-
-	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &struct_config); //se prende el TIMER1, se configura la division del clock del periferico, y se
-	//configura el timer como modo temporizador y ademas se retesea el contador y se lo saca del reset
-	TIM_ConfigMatch(LPC_TIM1, &struct_match); //carga todas las configuraciones del struct_match en ls registros correspondientes
-
-	TIM_ResetCounter(LPC_TIM1);
-	TIM_Cmd(LPC_TIM1, ENABLE); //habilita el contador del timer. todo
-
-	NVIC_EnableIRQ(TIMER1_IRQn);
-
-	return;
-}
 
 void confTIMER0()// timer para ENVIAR cada 2 segundos los datos de los sensores
 {
@@ -180,7 +156,7 @@ void confTIMER0()// timer para ENVIAR cada 2 segundos los datos de los sensores
 	struct_match.StopOnMatch        =    DISABLE; //no detiene el contador del timer cuando se produce un match
 	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_NOTHING;
 
-	struct_match.MatchValue         =    50000000-1;//2 segundos
+	struct_match.MatchValue         =    37500000-1;//1.5 segundos
 
 	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &struct_config); //se prende el TIMER0, se configura la division del clock del periferico, y se
 	//configura el timer como modo temporizador y ademas se retesea el contador y se lo saca del reset
@@ -190,6 +166,33 @@ void confTIMER0()// timer para ENVIAR cada 2 segundos los datos de los sensores
 	TIM_Cmd(LPC_TIM0, ENABLE); //habilita el contador del timer
 
 	NVIC_EnableIRQ(TIMER0_IRQn);
+
+	return;
+}
+
+void confTIMER1(){// antirebote de 0.5 segundos
+	TIM_TIMERCFG_Type    struct_config;
+	TIM_MATCHCFG_Type    struct_match;
+
+	struct_config.PrescaleOption    =    TIM_PRESCALE_TICKVAL;
+	struct_config.PrescaleValue     =    1;
+
+	struct_match.MatchChannel       =    0;
+	struct_match.IntOnMatch         =    ENABLE; //habilitamos las interrupciones por timer
+	struct_match.ResetOnMatch       =    ENABLE;//resetea el contador del timer cuando se produce un match
+	struct_match.StopOnMatch        =    DISABLE; //se detiene el contador del timer cuando se produce un match
+	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_NOTHING;
+
+	struct_match.MatchValue         =    25000000-1;//0.5 segundos
+
+	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &struct_config); //se prende el TIMER1, se configura la division del clock del periferico, y se
+	//configura el timer como modo temporizador y ademas se retesea el contador y se lo saca del reset
+	TIM_ConfigMatch(LPC_TIM1, &struct_match); //carga todas las configuraciones del struct_match en ls registros correspondientes
+
+	TIM_ResetCounter(LPC_TIM1);
+	TIM_Cmd(LPC_TIM1, ENABLE); //habilita el contador del timer. todo
+
+	NVIC_EnableIRQ(TIMER1_IRQn);
 
 	return;
 }
@@ -208,7 +211,7 @@ void confTIMER2()// timer para ENVIAR cada 2 segundos los datos de los sensores
 	struct_match.StopOnMatch        =    DISABLE; //no detiene el contador del timer cuando se produce un match
 	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_NOTHING;
 
-	struct_match.MatchValue         =    25000000-1;//1 segundos
+	struct_match.MatchValue         =    50000000-1;//1 segundos
 
 	TIM_Init(LPC_TIM2, TIM_TIMER_MODE, &struct_config); //se prende el TIMER0, se configura la division del clock del periferico, y se
 	//configura el timer como modo temporizador y ademas se retesea el contador y se lo saca del reset
@@ -301,10 +304,18 @@ void confEXTINT(){
 }
 
 void EINT0_IRQHandler(){// // todo
-	if(pul0==0){
+	if(pul0==0 && flagpul==0){
+		GPIO_ClearValue(1,PIN_20);
 		pul0=1;
-		//flagpul=1;
-		//TIM_Cmd(LPC_TIM1, ENABLE); todo
+		flagpul=1;
+		//TIM_Cmd(LPC_TIM0, ENABLE);
+		confTIMER0();
+	}else if(pul0==1 && flagpul==0){
+		GPIO_SetValue(1,PIN_20);
+		pul0=0;
+		flagpul=1;
+		//TIM_Cmd(LPC_TIM0, ENABLE);
+		confTIMER0();
 	}
 
 	EXTI_ClearEXTIFlag(EXTI_EINT0);
@@ -356,78 +367,58 @@ void ADC_IRQHandler(){
 
 }
 
-void TIMER2_IRQHandler()//0.5 segundo.antirebote
+void TIMER0_IRQHandler()//0.5 segundo.hanndler del timer para mandar datos de los sensores  por uart
 {
-	uint8_t info[]={0x38, 0x39,'\n','\r'};
-	UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
+	//uint8_t info[]={0x34, 0x35,'\n','\r'};
+	//UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
 	flagpul=0;// habilita pulsadores
-	//TIM_Cmd(LPC_TIM1, DISABLE); //deshabilita el contador del timer
-	TIM_ClearIntPending(LPC_TIM2,TIM_MR0_INT);
+	TIM_ClearIntPending(LPC_TIM0,TIM_MR0_INT);
 
 	return;
 }
 
-void TIMER1_IRQHandler()//0.5 segundo.antirebote
+void TIMER1_IRQHandler()//1 segundo.antirebote
 {
-	uint8_t info[]={0x36, 0x37,'\n','\r'};
-	UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
-	flagpul=0;// habilita pulsadores
+	//uint8_t info[]={0x36, 0x37,'\n','\r'};
+	//UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
+
 	configADC(2);
-	//TIM_Cmd(LPC_TIM1, DISABLE); //deshabilita el contador del timer
+
 	TIM_ClearIntPending(LPC_TIM1,TIM_MR0_INT);
 
 	return;
 }
 
-void TIMER0_IRQHandler()//2 segundos.hanndler del timer para mandar datos de los sensores  por uart
+void TIMER2_IRQHandler()//2 segundo.antirebote
 {
-		//------- ENVIO uart
-		//if(pul0==0 && pul1==0){ // los dos pulsadores activos
-			//UART_Send(LPC_UART2,(uint8_t*)&senialHum, sizeof(uint8_t), BLOCKING);
-			//confDMA();
-			//GPDMA_ChannelCmd(1,ENABLE);
-			//UART_Send(LPC_UART2,(uint8_t*)fin,sizeof(fin), BLOCKING);
 
-			//UART_Send(LPC_UART2,(uint8_t*)&senialTem, sizeof(uint8_t), BLOCKING);
-			//confDMA2();
-			//GPDMA_ChannelCmd(2,ENABLE);
-			//UART_Send(LPC_UART2,(uint8_t*)fin,sizeof(fin), BLOCKING);
-		//}else if(pul0==0){
-			//UART_Send(LPC_UART2,(uint8_t*)&senialHum, sizeof(uint8_t), BLOCKING);
-			//confDMA();
-			//GPDMA_ChannelCmd(1,ENABLE);
-			//UART_Send(LPC_UART2,(uint8_t*)fin,sizeof(fin), BLOCKING);
-		//}else if(pul1==0){
-			//UART_Send(LPC_UART2,(uint8_t*)&senialTem, sizeof(uint8_t), BLOCKING);
-			//confDMA2();
-			//GPDMA_ChannelCmd(2,ENABLE);
-			//UART_Send(LPC_UART2,(uint8_t*)fin,sizeof(fin), BLOCKING);
+	//-----------
+	//uint8_t info[]={0x38, 0x39,'\n','\r'};
+	//UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
+
+	//prueba++;
+	//static uint16_t prom=0;
+	//prom=0;
+	if(SelSensor==1){
+		//for(uint8_t i=0;i<10;i++){
+		//	prom=prom+valoresHum[i];
 		//}
-		uint8_t info[]={0x33, 0x34,'\n','\r'};
-		UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
-		//prueba++;
-		//static uint16_t prom=0;
-		//prom=0;
-		if(SelSensor==1){
-			//for(uint8_t i=0;i<10;i++){
-			//	prom=prom+valoresHum[i];
-			//}
-			//prom=prom/10;
-			//itoa(prom,resultadoHum); // humedad
-			UART_Send(LPC_UART2,(uint8_t*)resultadoHum,sizeof(resultadoHum), BLOCKING);
-		}else if(SelSensor==2){
-		//prom=0;
-			//for(uint8_t i=0;i<10;i++){
-			//	prom=prom+valoresTem[i];
-			//}
-			//prom=prom/10;
-			//itoa(prom, resultadoTem);// temperatura
-			UART_Send(LPC_UART2,(uint8_t*)resultadoTem,sizeof(resultadoTem), BLOCKING);// todo
-		}
-		//--------------------------
-
-	TIM_ClearIntPending(LPC_TIM0,TIM_MR0_INT);
-
+		//prom=prom/10;
+		//itoa(prom,resultadoHum); // humedad
+		UART_Send(LPC_UART2,(uint8_t*)resultadoHum,sizeof(resultadoHum), BLOCKING);
+	}else if(SelSensor==2){
+	//prom=0;
+		//for(uint8_t i=0;i<10;i++){
+		//	prom=prom+valoresTem[i];
+		//}
+		//prom=prom/10;
+		//itoa(prom, resultadoTem);// temperatura
+		UART_Send(LPC_UART2,(uint8_t*)resultadoTem,sizeof(resultadoTem), BLOCKING);// todo
+	}
+	uint8_t info[]={'\n'};
+	UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
+	//--------------------------
+	TIM_ClearIntPending(LPC_TIM2,TIM_MR0_INT);
 	return;
 }
 
