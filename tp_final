@@ -1,5 +1,8 @@
 
 // TRABAJO TP FINAL ELECTRONICA DIGITAL 3
+///*
+
+// ADC en modo timer pero en el handler
 
 #include "LPC17xx.h"
 #include "lpc17xx_dac.h"
@@ -18,17 +21,35 @@
 #define PIN_21 ((uint32_t)(1<<21))
 #define PIN_6 ((uint32_t)(1<<6))
 
-uint8_t señalHum[]={0x48,'\n','\r'};//0x48 =H . para sincronizar con la app de matalb
-uint8_t señalTem[]={0x54,'\n','\r'};//0x54 =T . para sincronizar con la app de matalb
+uint8_t senialHum = '0';//para sincronizar con la app
+uint8_t senialTem = '9';//para sincronizar con la app
+uint8_t fin[]={'\r','\n'};//para sincronizar con la app
 
-volatile uint8_t ValSentHum[1]; //valor a enviar por transmision
-volatile uint8_t ValSentTem[1];//valor a enviar por transmision
+volatile uint16_t ADC5Valueoriginal=0;//resultado conversion temperatura // SACAR ++++
+volatile uint16_t ADC4Valueoriginal=0;//resultado conversion humedad //  SACAR ++++++
+volatile uint16_t ADC5Value=0;//resultado conversion temperatura
+volatile uint16_t ADC4Value=0;//resultado conversion humedad
 
-uint8_t pul0=1;
+//volatile uint8_t ValSentHum[1];
+//volatile uint8_t ValSentTem[1];
+
+char resultadoHum[]=" ";// todo
+char resultadoTem[]=" ";// todo
+
+//volatile uint8_t ValSentHum[]={'48',(uint8_t)resultado,'\r','\n'}; //'48'=0 //valor a enviar por transmision //+++++++++
+//volatile uint8_t ValSentTem[]={'57',resultado,'\r','\n'};//'57'=9 //valor a enviar por transmision  //+++++++++
+//volatile uint8_t hola[]={1,10,200};
+//volatile uint8_t ValSentHum[]={'4','0','\r','\n'}; //valor a enviar por transmision //+++++++++
+//volatile uint8_t ValSentTem[]={'9','2','\r','\n'};//valor a enviar por transmision  //+++++++++
+//volatile uint8_t prueba[]={1,10,200};
+
+uint8_t pul0=1;// pulsador
 uint8_t pul1=1;
 uint8_t pul2=1;
-uint16_t ADC5Value=0;//resultado conversion temperatura
-uint16_t ADC4Value=0;//resultado conversion humedad
+
+uint8_t SelSensor=0;// con 0 usamos el sensor de humedad y con 1 el de temperatura
+
+uint8_t flagpul=0;//para antirebote
 
 	void confPIN();
 	void configADC();
@@ -36,6 +57,8 @@ uint16_t ADC4Value=0;//resultado conversion humedad
 	void confEXTINT();
 	void confUart();
 
+	void confTIMER0();
+	void confTIMER1(); // configuracion para antirebote
 	void confTIMER2();// timer para mandar cada 2 segundos la tranmision uart de los datos de los sensores analogicos
 
 	void confDMA();// configuramos el canal para mandar los datos sensor analogico de HUMEDAD por uart a pc usando dma
@@ -43,25 +66,25 @@ uint16_t ADC4Value=0;//resultado conversion humedad
 	void confDMA5();// configuramos el canal para mandar los datos sensor analogico de HUMEDAD por uart a pc usando dma
 	void confDMA6();// configuramos el canal para mandar los datos sensor analogico de TEMP por uart a lora usando dma
 
+	void itoa(uint16_t num, char* str);
 int main(){
 	uint32_t value=0;// sirve para el breakpoint de despues
 	GPIO_ClearValue(1,PIN_20);
 	GPIO_ClearValue(1,PIN_21);
-	GPIO_ClearValue(2,PIN_6);
 
 	confPIN(); //configuramos todos los pines
 	confEXTINT();//configuramos las interrupciones externa
 
 	confUart();
 	configADC();
-	confDMA();
-	confDMA2();
-	confDMA5();
-	confDMA6();
 
-	confTIMER2();
+	//confDMA();
 
-	TIM_ResetCounter(LPC_TIM2);
+	//confTIMER1();// antirebote
+	//confTIMER2();//enviar los datos
+
+	//TIM_ResetCounter(LPC_TIM1);
+	//TIM_ResetCounter(LPC_TIM2);
 
 	while(1){
 		value++;// poner un breakpoint aca e ir apretando resumen para ver como funciona
@@ -136,6 +159,58 @@ void confPIN(){
 
 }
 
+void confTIMER0(){ // 1 segundo
+	TIM_TIMERCFG_Type    struct_config;
+	TIM_MATCHCFG_Type    struct_match;
+
+	struct_config.PrescaleOption    =    TIM_PRESCALE_TICKVAL;
+	struct_config.PrescaleValue     =    1;
+
+	struct_match.MatchChannel       =    0;
+	struct_match.IntOnMatch         =    ENABLE; //deshabilitamos las interrupciones por timer
+	struct_match.ResetOnMatch       =    ENABLE;//resetea el contador del timer cuando se produce un match
+	struct_match.StopOnMatch        =    DISABLE; //no detiene el contador del timer cuando se produce un match
+	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_NOTHING;
+
+	struct_match.MatchValue         =    50000000-1; //De esta manera obtengo que el match toggle cada la mitad del tiempo que quiera muestrear
+
+	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &struct_config); //se prende el timer0, se configura la division del clock del periferico, y se
+	//configura el timer como modo temporizador y ademas se retesea el contador y se lo saca del reset
+	TIM_ConfigMatch(LPC_TIM0, &struct_match); //carga todas las configuraciones del struct_match en ls registros correspondientes
+
+	TIM_ResetCounter(LPC_TIM0);
+	TIM_Cmd(LPC_TIM0, ENABLE); //todo //habilita el contador del timer y prescaler
+	NVIC_EnableIRQ(TIMER0_IRQn);
+	return;
+}
+
+void confTIMER1(){// antirebote de 0.5 segundos
+	TIM_TIMERCFG_Type    struct_config;
+	TIM_MATCHCFG_Type    struct_match;
+
+	struct_config.PrescaleOption    =    TIM_PRESCALE_TICKVAL;
+	struct_config.PrescaleValue     =    1;
+
+	struct_match.MatchChannel       =    0;
+	struct_match.IntOnMatch         =    ENABLE; //habilitamos las interrupciones por timer
+	struct_match.ResetOnMatch       =    ENABLE;//resetea el contador del timer cuando se produce un match
+	struct_match.StopOnMatch        =    ENABLE; //se detiene el contador del timer cuando se produce un match
+	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_NOTHING;
+
+	struct_match.MatchValue         =    12500000-1;//0.5 segundos
+
+	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &struct_config); //se prende el TIMER1, se configura la division del clock del periferico, y se
+	//configura el timer como modo temporizador y ademas se retesea el contador y se lo saca del reset
+	TIM_ConfigMatch(LPC_TIM1, &struct_match); //carga todas las configuraciones del struct_match en ls registros correspondientes
+
+	TIM_ResetCounter(LPC_TIM1);
+	TIM_Cmd(LPC_TIM1, DISABLE); //habilita el contador del timer
+
+	NVIC_EnableIRQ(TIMER1_IRQn);
+
+	return;
+}
+
 void confTIMER2()// timer para ENVIAR cada 2 segundos los datos de los sensores
 {
 	TIM_TIMERCFG_Type    struct_config;
@@ -183,15 +258,16 @@ void configADC()// convierte la señal analogica de los sensores analogicos,en d
 	//ADC_StartCmd(LPC_ADC, ADC_START_CONTINUOUS);//ADC_START_CONTINUOUS=0
 	//ADC_BurstCmd(LPC_ADC, ENABLE);//Modo burst
 
-	LPC_SC->PCONP |= (1 << 12);
-	LPC_ADC->ADCR |= (1 << 21); //habilita el ADC
-	LPC_SC->PCLKSEL0 |= (3<<24);  //CCLK/8
-	LPC_ADC->ADCR &=~(255 << 8);  //limpiamos
-	LPC_ADC->ADCR |= (1 << 4)|(1 << 5);   // canales
-	LPC_ADC->ADCR |= (1 << 16);   // burst
-	LPC_PINCON->PINMODE3 |= (1<<29)|(1<<31); //ni pull-up ni pull-down.
-	LPC_ADC->ADINTEN |= (1<<4) |(1 << 5);// habilitamos interrupciones
-	LPC_ADC->ADINTEN &=~ (1<<8); // habilitamos q interrumpa solo canal canal habilitado
+	ADC_Init(LPC_ADC, 200000); //ENCIENDO ADC
+
+
+	ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,ENABLE); //POR CANAL 0
+	ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_5,DISABLE); //POR CANAL 0
+	ADC_StartCmd(LPC_ADC, ADC_START_CONTINUOUS);    //START CON MATCH, DEBE MUESTREAR CADA 1 SEG
+	ADC_BurstCmd(LPC_ADC, ENABLE);//Modo controlado // todo
+	ADC_IntConfig(LPC_ADC, ADC_ADGINTEN, SET);//Activo las interrupciones
+
+	ADC_GlobalGetStatus(LPC_ADC, 1); //Bajo la bandera
 	NVIC_EnableIRQ(ADC_IRQn);
 
 	return;
@@ -204,8 +280,7 @@ void confUart(){
 	//inicializa perif rico
 	UART_Init(LPC_UART2, &UARTConfigStruct);
 
-	UARTFIFOConfigStruct.FIFO_DMAMode = ENABLE;        // Habilita la escritura de la FIFO por DMA
-	UARTFIFOConfigStruct.FIFO_DMAMode = ENABLE;
+	UARTFIFOConfigStruct.FIFO_DMAMode = ENABLE;// todo . /// Habilita la escritura de la FIFO por DMA
 	UARTFIFOConfigStruct.FIFO_Level = UART_FIFO_TRGLEV0;
 	UARTFIFOConfigStruct.FIFO_ResetRxBuf = ENABLE;
 	UARTFIFOConfigStruct.FIFO_ResetTxBuf = ENABLE;
@@ -245,7 +320,7 @@ void confEXTINT(){
 	NVIC_EnableIRQ(EINT2_IRQn);//EINT2 ya q usamos p2.12
 }
 
-void EINT0_IRQHandler(){//led azul
+void EINT0_IRQHandler(){//led azul // todo
 	if(pul0==0){
 		pul0=1;
 	}else{
@@ -261,7 +336,7 @@ void EINT0_IRQHandler(){//led azul
 	EXTI_ClearEXTIFlag(EXTI_EINT0);
 }
 
-void EINT1_IRQHandler(){ //led rojo
+void EINT1_IRQHandler(){ //led rojo // todo
 	if(pul1==0){
 		pul1=1;
 	}else{
@@ -276,7 +351,7 @@ void EINT1_IRQHandler(){ //led rojo
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 }
 
-void EINT2_IRQHandler(){ //led blanco
+void EINT2_IRQHandler(){ //led blanco  // todo
 	if(pul2==0){
 		pul2=1;
 	}else{
@@ -299,9 +374,9 @@ void confDMA() // configuramos el canal para mandar los datos sensor analogico d
 
 	GPDMA_Channel_CFG_Type DMAUARTConfig;
 	DMAUARTConfig.ChannelNum = 1;
-	DMAUARTConfig.SrcMemAddr = (uint32_t)(ValSentHum);
+	//DMAUARTConfig.SrcMemAddr = (uint32_t)(resultadoHum);
 	DMAUARTConfig.DstMemAddr = 0;
-	DMAUARTConfig.TransferSize = sizeof(ValSentHum);
+	DMAUARTConfig.TransferSize = sizeof(resultadoHum);
 	DMAUARTConfig.TransferWidth = 0;
 	DMAUARTConfig.TransferType = GPDMA_TRANSFERTYPE_M2P;
 	DMAUARTConfig.SrcConn = 0;
@@ -322,9 +397,9 @@ void confDMA2() // configuramos el canal para mandar los datos sensor analogico 
 
 	GPDMA_Channel_CFG_Type DMAUARTConfig;
 	DMAUARTConfig.ChannelNum = 2;
-	DMAUARTConfig.SrcMemAddr = (uint32_t)(ValSentTem);
+	//DMAUARTConfig.SrcMemAddr = (uint32_t)(resultadoTem);
 	DMAUARTConfig.DstMemAddr = 0;
-	DMAUARTConfig.TransferSize = sizeof(ValSentTem);
+	DMAUARTConfig.TransferSize = sizeof(resultadoTem);
 	DMAUARTConfig.TransferWidth = 0;
 	DMAUARTConfig.TransferType = GPDMA_TRANSFERTYPE_M2P;
 	DMAUARTConfig.SrcConn = 0;
@@ -344,9 +419,9 @@ void confDMA5() // configuramos el canal para mandar los datos sensor analogico 
 
 	GPDMA_Channel_CFG_Type DMAUARTConfig;
 	DMAUARTConfig.ChannelNum = 5;
-	DMAUARTConfig.SrcMemAddr = (uint32_t)(ValSentHum);
+	//DMAUARTConfig.SrcMemAddr = (uint32_t)(resultadoHum);
 	DMAUARTConfig.DstMemAddr = 0;
-	DMAUARTConfig.TransferSize = sizeof(ValSentHum);
+	DMAUARTConfig.TransferSize = sizeof(resultadoHum);
 	DMAUARTConfig.TransferWidth = 0;
 	DMAUARTConfig.TransferType = GPDMA_TRANSFERTYPE_M2P;
 	DMAUARTConfig.SrcConn = 0;
@@ -366,9 +441,9 @@ void confDMA6() // configuramos el canal para mandar los datos sensor analogico 
 
 	GPDMA_Channel_CFG_Type DMAUARTConfig;
 	DMAUARTConfig.ChannelNum = 6;
-	DMAUARTConfig.SrcMemAddr = (uint32_t)(ValSentTem);
+	//DMAUARTConfig.SrcMemAddr = (uint32_t)(resultadoTem);
 	DMAUARTConfig.DstMemAddr = 0;
-	DMAUARTConfig.TransferSize = sizeof(ValSentTem);
+	DMAUARTConfig.TransferSize = sizeof(resultadoTem);
 	DMAUARTConfig.TransferWidth = 0;
 	DMAUARTConfig.TransferType = GPDMA_TRANSFERTYPE_M2P;
 	DMAUARTConfig.SrcConn = 0;
@@ -383,58 +458,114 @@ void confDMA6() // configuramos el canal para mandar los datos sensor analogico 
 
 void ADC_IRQHandler(){
 	if(LPC_ADC->ADDR5 &(1<<31)){ // bit DONE del canal 5
-		ADC5Value = ((LPC_ADC->ADDR5)>>4) & 0xFFF;
-		ADC5Value = 100 - (ADC5Value * 100) / 1023; //obtenemos el valor de temperatura
-		ValSentHum[0]=ADC5Value;
+		ADC5Valueoriginal = ((LPC_ADC->ADDR5)>>4) & 0xFFF;
+		//ADC5Valueoriginal = LPC_ADC->ADDR5;
+		//ADC5Value = 100 - (ADC5Valueoriginal * 100) / 1023; //obtenemos el valor de temperatura
+
+		ADC5Value = ((ADC5Valueoriginal * 3.3 * 100) / 4096)-5;
+
+		itoa(ADC5Value, resultadoTem);// temperatura // todo
+		UART_Send(LPC_UART2,(uint8_t*)resultadoTem,sizeof(resultadoTem), BLOCKING);// todo
+		//ValSentHum[1]=ADC5Value;
 	}else if(LPC_ADC->ADDR4 &(1<<31)){  // bit DONE del canal 4
-		ADC4Value = ((LPC_ADC->ADDR4)>>4) & 0xFFF;
-		ADC4Value= (ADC4Value*5*100)/4095; // obtenemos el valor de humedad
-		ValSentTem[0]=ADC4Value;
+		ADC4Valueoriginal = ((LPC_ADC->ADDR4)>>4) & 0xFFF;
+		//ADC4Valueoriginal = LPC_ADC->ADDR4;
+		//ADC4Value= (ADC4Valueoriginal*5*100)/4095; // obtenemos el valor de humedad
+		//ADC4Value= (100*(500-ADC4Valueoriginal))/(170-ADC4Valueoriginal);
+		ADC4Value= (ADC4Valueoriginal * 100) / 4096;
+		itoa(ADC4Value,resultadoHum); // humedad // todo
+		UART_Send(LPC_UART2,(uint8_t*)resultadoHum,sizeof(resultadoHum), BLOCKING); // todo
+		//ValSentTem[1]=ADC4Value;
 	}
+
 }
 
-void TIMER2_IRQHandler()//2 segundos.hanndler del timer para mandar datos de los sensores digital por uart
+void TIMER0_IRQHandler()//0.5 segundo.antirebote
+{
+
+	TIM_ClearIntPending(LPC_TIM0,TIM_MR0_INT);
+
+	return;
+}
+
+void TIMER1_IRQHandler()//0.5 segundo.antirebote
+{
+	flagpul=0;// habilita pulsadores
+	TIM_Cmd(LPC_TIM1, DISABLE); //deshabilita el contador del timer
+	TIM_ClearIntPending(LPC_TIM1,TIM_MR0_INT);
+
+	return;
+}
+
+void TIMER2_IRQHandler()//2 segundos.hanndler del timer para mandar datos de los sensores  por uart
 
 {
 		//------- ENVIO uart
 		if(pul0==0 && pul1==0){ // los dos pulsadores activos
-			UART_Send(LPC_UART2,señalHum,sizeof(señalHum), BLOCKING);
+			UART_Send(LPC_UART2,(uint8_t*)&senialHum, sizeof(uint8_t), BLOCKING);
 			confDMA();
 			GPDMA_ChannelCmd(1,ENABLE);
-			UART_Send(LPC_UART2,señalTem, sizeof(señalTem), BLOCKING);
+			UART_Send(LPC_UART2,(uint8_t*)fin,sizeof(fin), BLOCKING);
+
+			UART_Send(LPC_UART2,(uint8_t*)&senialTem, sizeof(uint8_t), BLOCKING);
 			confDMA2();
 			GPDMA_ChannelCmd(2,ENABLE);
+			UART_Send(LPC_UART2,(uint8_t*)fin,sizeof(fin), BLOCKING);
 		}else if(pul0==0){
-			UART_Send(LPC_UART2,señalHum,sizeof(señalHum), BLOCKING);
+			UART_Send(LPC_UART2,(uint8_t*)&senialHum, sizeof(uint8_t), BLOCKING);
 			confDMA();
 			GPDMA_ChannelCmd(1,ENABLE);
+			UART_Send(LPC_UART2,(uint8_t*)fin,sizeof(fin), BLOCKING);
 		}else if(pul1==0){
-			UART_Send(LPC_UART2,señalTem, sizeof(señalTem), BLOCKING);
+			UART_Send(LPC_UART2,(uint8_t*)&senialTem, sizeof(uint8_t), BLOCKING);
 			confDMA2();
 			GPDMA_ChannelCmd(2,ENABLE);
+			UART_Send(LPC_UART2,(uint8_t*)fin,sizeof(fin), BLOCKING);
 		}
 		//--------------------------
-
-
-		//----------- ENVIO LORA
-		if(pul2==0){ // si pulsador de led blanco esta activo
-			if(pul0==0 && pul1==0){
-				confDMA5();
-				GPDMA_ChannelCmd(5,ENABLE);
-				confDMA6();
-				GPDMA_ChannelCmd(6,ENABLE);
-			}else if(pul0==0){//osea si el led azul esta prendido
-				confDMA5();
-				GPDMA_ChannelCmd(5,ENABLE);
-			}else if(pul1==0){ //osea si el led rojo esta prendido
-				confDMA6();
-				GPDMA_ChannelCmd(6,ENABLE);
-			}
-		}
-		//--------------
 
 	TIM_ClearIntPending(LPC_TIM2,TIM_MR0_INT);
 
 	return;
 }
 
+void itoa(uint16_t num, char* str)
+{
+    int i = 0;
+
+    if (num == 0)                // Manejo del numero 0 de forma explicita
+    {
+        str[i++]= '0';
+        str[i++]= '\0';
+        str[i] 	= '\0';
+        return;
+    }
+
+
+    while (num != 0)            // Se procesa cada digito de manera individual
+    {
+        int rem = num % 10;
+        str[i++] = (rem > 9)? (rem-10) + 'a' : rem + '0';   // Devuelve el equivalente en ASCII en orden inverso
+        num = num/10;
+    }
+
+    if(i==1){
+    	str[i++] = '\0';
+    }
+    str[i] = '\0';
+
+    int start = 0;
+    int end = i -1;
+    char aux;
+
+	while (start < end)       // Invierto los caracteres del string
+	{
+		aux = *(str+start);
+		*(str+start) = *(str+end);
+		*(str+end) = aux;
+		start++;
+		end--;
+	}
+    return;
+}
+//*/
