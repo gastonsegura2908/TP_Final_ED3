@@ -15,23 +15,25 @@
 #include "lpc17xx_uart.h"
 #include <stdio.h>
 #include <string.h>
+
 #include <math.h>
 
 #define PIN_20 ((uint32_t)(1<<20))
 #define PIN_21 ((uint32_t)(1<<21))
+#define PIN_6 ((uint32_t)(1<<6))
 
-uint8_t prueba=0;
+//uint8_t prueba=0;
 
-uint8_t senialHum = '0';//para sincronizar con la app
-uint8_t senialTem = '9';//para sincronizar con la app
-uint8_t fin[]={'\r','\n'};//para sincronizar con la app
+//uint8_t senialHum = '0';//para sincronizar con la app
+//uint8_t senialTem = '9';//para sincronizar con la app
+//uint8_t fin[]={'\r','\n'};//para sincronizar con la app
 
 volatile uint16_t ADC5Valueoriginal=0;//resultado conversion temperatura // SACAR ++++
 volatile uint16_t ADC4Valueoriginal=0;//resultado conversion humedad //  SACAR ++++++
 volatile uint16_t ADC5Value=0;//resultado conversion temperatura
 volatile uint16_t ADC4Value=0;//resultado conversion humedad
-uint16_t valoresHum[10];
-uint16_t valoresTem[10];
+//uint16_t valoresHum[10];
+//uint16_t valoresTem[10];
 
 //volatile uint8_t ValSentHum[1];
 //volatile uint8_t ValSentTem[1];
@@ -48,24 +50,24 @@ char resultadoTem[]=" ";// todo
 
 uint8_t pul0;// pulsador para cambiar de modo
 
-uint8_t SelSensor;// con 0 los dos apagados,con 1 usamos el sensor de humedad y con 2 el de temperatura. se cambia con pulsador y con uart
+uint8_t SelSensor;// todo . con 0 los dos apagados,con 1 usamos el sensor de humedad y con 2 el de temperatura. se cambia con pulsador y con uart
 
 uint8_t flagpul;//para antirebote
+
+uint8_t info[1] = ""; // todo
 
 	void confPIN();
 	void configADC(uint8_t num);
 
 	void confEXTINT();
 	void confUart();
+	void confUartRecib();
 
 	void confTIMER2();
 	void confTIMER1(); // configuracion para antirebote
 	void confTIMER0();// timer para mandar cada 2 segundos la tranmision uart de los datos de los sensores analogicos
 
 	void confDMA();// configuramos el canal para mandar los datos sensor analogico de HUMEDAD por uart a pc usando dma
-	void confDMA2();// configuramos el canal para mandar los datos sensor analogico de TEMP por uart a lora usando dma
-	void confDMA5();// configuramos el canal para mandar los datos sensor analogico de HUMEDAD por uart a pc usando dma
-	void confDMA6();// configuramos el canal para mandar los datos sensor analogico de TEMP por uart a lora usando dma
 
 	void itoa(uint16_t num, char* str);
 	void numtoarray(uint16_t num,uint16_t array[]);
@@ -74,6 +76,7 @@ int main(){
 	uint32_t value=0;// sirve para el breakpoint de despues
 	GPIO_ClearValue(1,PIN_20);
 	GPIO_ClearValue(1,PIN_21);
+	GPIO_ClearValue(2,PIN_6);
 
 	SelSensor=2;// todo
 	pul0=1;
@@ -85,15 +88,16 @@ int main(){
 	confUart();
 	//configADC(2);//1:humedad ,2: Temperatura
 
-	confDMA();
+	//confDMA();
+	//confUartRecib();
 
 	confTIMER2();
 	confTIMER1();// antirebote
 	//confTIMER0();//enviar los datos
 
 	TIM_ResetCounter(LPC_TIM2);
-	//TIM_ResetCounter(LPC_TIM1);
-	TIM_ResetCounter(LPC_TIM0);
+	TIM_ResetCounter(LPC_TIM1);
+	//TIM_ResetCounter(LPC_TIM0);
 
 	while(1){
 		value++;// poner un breakpoint aca e ir apretando resumen para ver como funciona
@@ -105,6 +109,7 @@ int main(){
 void confPIN(){
 	GPIO_SetDir(1,PIN_20,1);
 	GPIO_SetDir(1,PIN_21,1);
+	GPIO_SetDir(2,PIN_6,1);
 
 	PINSEL_CFG_Type structPINADC5;// ADC0.5 - sensor de temperatura
 	structPINADC5.Pinnum=31;
@@ -170,7 +175,7 @@ void confTIMER0()// timer para ENVIAR cada 2 segundos los datos de los sensores
 	return;
 }
 
-void confTIMER1(){// antirebote de 0.5 segundos
+void confTIMER1(){
 	TIM_TIMERCFG_Type    struct_config;
 	TIM_MATCHCFG_Type    struct_match;
 
@@ -272,7 +277,7 @@ void configADC(uint8_t num)// convierte la señal analogica de los sensores anal
 	return;
 }
 
-void confUart(){
+void confUart(){ // SACAR . todo
 	UART_CFG_Type UARTConfigStruct;//variable auxiliar. es una estructura que es utilizada por las funciones del driver  para mostrar/sacar valores para realizar la configuracion
 	UART_FIFO_CFG_Type UARTFIFOConfigStruct;
 	UART_ConfigStructInit(&UARTConfigStruct);
@@ -291,6 +296,28 @@ void confUart(){
 	return;
 }
 
+void confUartRecib(void){
+
+	UART_CFG_Type      UARTConfigStruct;
+	UART_FIFO_CFG_Type UARTFIFOConfigStruct;
+	//configuraci�n por defecto:
+	UART_ConfigStructInit(&UARTConfigStruct);
+	//inicializa perif�rico
+	UART_Init(LPC_UART2, &UARTConfigStruct);
+	//Inicializa FIFO
+	UART_FIFOConfigStructInit(&UARTFIFOConfigStruct);
+	UARTFIFOConfigStruct.FIFO_DMAMode = ENABLE;
+	UART_FIFOConfig(LPC_UART2, &UARTFIFOConfigStruct);
+	// Habilita interrupci�n por el RX del UART
+	UART_IntConfig(LPC_UART2, UART_INTCFG_RBR, ENABLE);
+	// Habilita interrupci�n por el estado de la linea UART
+	UART_IntConfig(LPC_UART2, UART_INTCFG_RLS, ENABLE);
+	//NVIC_SetPriority(UART2_IRQn, 1);
+	//Habilita interrupci�n por UART2
+	NVIC_EnableIRQ(UART2_IRQn);
+	return;
+}
+
 void confEXTINT(){
 	EXTI_Init();
 	EXTI_InitTypeDef structEXTINT0;
@@ -305,13 +332,13 @@ void confEXTINT(){
 
 void EINT0_IRQHandler(){// // todo
 	if(pul0==0 && flagpul==0){
-		GPIO_ClearValue(1,PIN_20);
+		GPIO_ClearValue(2,PIN_6);
 		pul0=1;
 		flagpul=1;
 		//TIM_Cmd(LPC_TIM0, ENABLE);
 		confTIMER0();
 	}else if(pul0==1 && flagpul==0){
-		GPIO_SetValue(1,PIN_20);
+		GPIO_SetValue(2,PIN_6);
 		pul0=0;
 		flagpul=1;
 		//TIM_Cmd(LPC_TIM0, ENABLE);
@@ -377,12 +404,12 @@ void TIMER0_IRQHandler()//0.5 segundo.hanndler del timer para mandar datos de lo
 	return;
 }
 
-void TIMER1_IRQHandler()//1 segundo.antirebote
+void TIMER1_IRQHandler()//
 {
 	//uint8_t info[]={0x36, 0x37,'\n','\r'};
 	//UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
 
-	configADC(2);
+	configADC(SelSensor);
 
 	TIM_ClearIntPending(LPC_TIM1,TIM_MR0_INT);
 
@@ -405,6 +432,10 @@ void TIMER2_IRQHandler()//2 segundo.antirebote
 		//}
 		//prom=prom/10;
 		//itoa(prom,resultadoHum); // humedad
+
+		uint8_t text[]={'H','\n'};
+		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
+
 		UART_Send(LPC_UART2,(uint8_t*)resultadoHum,sizeof(resultadoHum), BLOCKING);
 	}else if(SelSensor==2){
 	//prom=0;
@@ -413,7 +444,11 @@ void TIMER2_IRQHandler()//2 segundo.antirebote
 		//}
 		//prom=prom/10;
 		//itoa(prom, resultadoTem);// temperatura
-		UART_Send(LPC_UART2,(uint8_t*)resultadoTem,sizeof(resultadoTem), BLOCKING);// todo
+
+		uint8_t text[]={'T','\n'};
+		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
+
+		UART_Send(LPC_UART2,(uint8_t*)resultadoTem,sizeof(resultadoTem), BLOCKING);
 	}
 	uint8_t info[]={'\n'};
 	UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
@@ -468,4 +503,27 @@ void numtoarray(uint16_t num,uint16_t *array){
 	}
 	array[0]=num;
 	}
+
+void UART2_IRQHandler(void){
+	uint32_t intsrc, tmp, tmp1;
+	//Determina la fuente de interrupci�n
+	intsrc = UART_GetIntId(LPC_UART2);
+	tmp = intsrc & UART_IIR_INTID_MASK;
+	// Eval�a Line Status
+	if (tmp == UART_IIR_INTID_RLS){
+		tmp1 = UART_GetLineStatus(LPC_UART2);
+		tmp1 &= (UART_LSR_OE | UART_LSR_PE | UART_LSR_FE \
+				| UART_LSR_BI | UART_LSR_RXFE);
+		// ingresa a un Loop infinito si hay error
+		if (tmp1) {
+			while(1){};
+		}
+	}
+	// Receive Data Available or Character time-out
+	if ((tmp == UART_IIR_INTID_RDA) || (tmp == UART_IIR_INTID_CTI)){
+		UART_Receive(LPC_UART2, info, sizeof(info), NONE_BLOCKING);
+	}
+	SelSensor=info[0];//todo
+	return;
+}
 //*/
