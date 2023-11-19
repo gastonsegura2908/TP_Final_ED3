@@ -468,6 +468,9 @@ void TIMER2_IRQHandler()//2 segundo.antirebote
 
 		UART_Send(LPC_UART2,(uint8_t*)resultadoTem,sizeof(resultadoTem), BLOCKING);
 	}else if(SelSensor==3){
+		uint8_t text0[]={'A','\n'};
+		UART_Send(LPC_UART2, text0, sizeof(text0), BLOCKING);
+
 		uint8_t text[]={'T','\n'};
 		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
 		UART_Send(LPC_UART2,(uint8_t*)resultadoTem,sizeof(resultadoTem), BLOCKING);
