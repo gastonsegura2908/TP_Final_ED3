@@ -56,6 +56,8 @@ uint8_t flagpul;//para antirebote
 
 uint8_t info[1] = ""; // todo
 
+uint8_t flagespecial;
+
 	void confPIN();
 	void configADC(uint8_t num);
 
@@ -81,6 +83,7 @@ int main(){
 	SelSensor=0;// todo
 	//pul0=1;
 	flagpul=0;
+	flagespecial=0;
 
 	confPIN(); //configuramos todos los pines
 	confEXTINT();//configuramos las interrupciones externa
@@ -266,8 +269,8 @@ void configADC(uint8_t num)// convierte la señal analogica de los sensores anal
 		GPIO_ClearValue(1,PIN_20);
 		GPIO_SetValue(1,PIN_21);
 	}else if(num==3){
-		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,ENABLE); //humedad
-		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_5,ENABLE); //temperatura
+		//ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,ENABLE); //humedad
+		//ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_5,ENABLE); //temperatura
 		GPIO_SetValue(1,PIN_20);
 		GPIO_SetValue(1,PIN_21);
 	}
@@ -354,6 +357,11 @@ void EINT0_IRQHandler(){// // todo
 		if(SelSensor==4){
 			SelSensor=0;
 		}
+		if(SelSensor==3){
+			flagespecial=1;
+		}else{
+			flagespecial=0;
+		}
 		confTIMER0();
 	}
 
@@ -422,8 +430,14 @@ void TIMER1_IRQHandler()//
 {
 	//uint8_t info[]={0x36, 0x37,'\n','\r'};
 	//UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
-
-	configADC(SelSensor);
+	if(flagespecial==0){
+		configADC(SelSensor);
+	}else if(flagespecial==1){
+		GPIO_SetValue(1,PIN_20);
+		GPIO_SetValue(1,PIN_21);
+		configADC(1);
+		configADC(2);
+	}
 
 	TIM_ClearIntPending(LPC_TIM1,TIM_MR0_INT);
 
@@ -556,6 +570,13 @@ void UART2_IRQHandler(void){
 		UART_Receive(LPC_UART2, info, sizeof(info), NONE_BLOCKING);
 	}
 	SelSensor=info[0];//todo
+
+	if(SelSensor==3){
+		flagespecial=1;
+	}else{
+		flagespecial=0;
+	}
+
 	return;
 }
 
