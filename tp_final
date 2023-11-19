@@ -48,7 +48,7 @@ char resultadoTem[]=" ";// todo
 //volatile uint8_t ValSentTem[]={'9','2','\r','\n'};//valor a enviar por transmision  //+++++++++
 //volatile uint8_t prueba[]={1,10,200};
 
-uint8_t pul0;// pulsador para cambiar de modo
+//uint8_t pul0;// pulsador para cambiar de modo
 
 uint8_t SelSensor;// todo . con 0 los dos apagados,con 1 usamos el sensor de humedad y con 2 el de temperatura. se cambia con pulsador y con uart
 
@@ -78,8 +78,8 @@ int main(){
 	GPIO_ClearValue(1,PIN_21);
 	GPIO_ClearValue(2,PIN_6);
 
-	SelSensor=2;// todo
-	pul0=1;
+	SelSensor=0;// todo
+	//pul0=1;
 	flagpul=0;
 
 	confPIN(); //configuramos todos los pines
@@ -265,6 +265,11 @@ void configADC(uint8_t num)// convierte la señal analogica de los sensores anal
 		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_5,ENABLE); //temperatura
 		GPIO_ClearValue(1,PIN_20);
 		GPIO_SetValue(1,PIN_21);
+	}else if(num==3){
+		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,ENABLE); //humedad
+		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_5,ENABLE); //temperatura
+		GPIO_SetValue(1,PIN_20);
+		GPIO_SetValue(1,PIN_21);
 	}
 
 	ADC_BurstCmd(LPC_ADC, DISABLE);//Modo controlado // todo
@@ -331,17 +336,24 @@ void confEXTINT(){
 }
 
 void EINT0_IRQHandler(){// // todo
-	if(pul0==0 && flagpul==0){
-		GPIO_ClearValue(2,PIN_6);
-		pul0=1;
-		flagpul=1;
-		//TIM_Cmd(LPC_TIM0, ENABLE);
-		confTIMER0();
-	}else if(pul0==1 && flagpul==0){
+	//if(pul0==0 && flagpul==0){
+	//	GPIO_ClearValue(2,PIN_6);
+	//	pul0=1;
+	//	flagpul=1;
+	//	confTIMER0();
+	//}else if(pul0==1 && flagpul==0){
+	//	GPIO_SetValue(2,PIN_6);
+	//	pul0=0;
+	//	flagpul=1;
+	//	confTIMER0();
+	//}
+	if(flagpul==0){
 		GPIO_SetValue(2,PIN_6);
-		pul0=0;
 		flagpul=1;
-		//TIM_Cmd(LPC_TIM0, ENABLE);
+		SelSensor=SelSensor+1;
+		if(SelSensor==4){
+			SelSensor=0;
+		}
 		confTIMER0();
 	}
 
@@ -399,6 +411,8 @@ void TIMER0_IRQHandler()//0.5 segundo.hanndler del timer para mandar datos de lo
 	//uint8_t info[]={0x34, 0x35,'\n','\r'};
 	//UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
 	flagpul=0;// habilita pulsadores
+	GPIO_ClearValue(2,PIN_6);
+
 	TIM_ClearIntPending(LPC_TIM0,TIM_MR0_INT);
 
 	return;
@@ -426,7 +440,11 @@ void TIMER2_IRQHandler()//2 segundo.antirebote
 	//prueba++;
 	//static uint16_t prom=0;
 	//prom=0;
-	if(SelSensor==1){
+	if(SelSensor==0){
+		uint8_t text[]={'N','\n'};
+		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
+	}
+	else if(SelSensor==1){
 		//for(uint8_t i=0;i<10;i++){
 		//	prom=prom+valoresHum[i];
 		//}
@@ -449,6 +467,17 @@ void TIMER2_IRQHandler()//2 segundo.antirebote
 		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
 
 		UART_Send(LPC_UART2,(uint8_t*)resultadoTem,sizeof(resultadoTem), BLOCKING);
+	}else if(SelSensor==3){
+		uint8_t text[]={'T','\n'};
+		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
+		UART_Send(LPC_UART2,(uint8_t*)resultadoTem,sizeof(resultadoTem), BLOCKING);
+
+		uint8_t info[]={'\n'};
+		UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
+
+		uint8_t text2[]={'H','\n'};
+		UART_Send(LPC_UART2, text2, sizeof(text2), BLOCKING);
+		UART_Send(LPC_UART2,(uint8_t*)resultadoHum,sizeof(resultadoHum), BLOCKING);
 	}
 	uint8_t info[]={'\n'};
 	UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
@@ -526,4 +555,5 @@ void UART2_IRQHandler(void){
 	SelSensor=info[0];//todo
 	return;
 }
+
 //*/
