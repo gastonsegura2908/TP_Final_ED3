@@ -1,8 +1,8 @@
 /* 	TRABAJO PRACTICO FINAL - ELECTRONICA DIGITAL 3 - 2023
  * 	-----------------------------------------------------
- * 		"Monitoreo de Condiciones Climáticas del Suelo"
+ * 		"Monitoreo de Condiciones Climáticas SeMaKu"
  *	Utilizando el microcontrolador LPC1769,
- *	sensores de temperatura y huemdad en suelo.
+ *	sensores de temperatura y humedad en suelo.
  *	-----------------------------------------------------
  *	Integrantes del grupo 10:
  *			Segura, Gaston.
@@ -42,6 +42,10 @@ volatile int16_t  ADC4ValueMinimo	=	1200; 	// Para calibrar sensor de humedad
 char resultadoHum[]	=	" ";					// Para enviar por UART
 char resultadoTem[]	=	" ";					// Para enviar por UART
 
+uint8_t RegHumDMA[1] = {0};						    // Para enviar por UART usando DMA
+
+uint16_t RegHum[10];							// Ultimos 10 registros de humedad
+
 uint8_t SelSensor;								// Selecciona el modo de uso . con 0 los dos apagados,con 1 usamos el sensor de humedad y con 2 el de temperatura, 3 ambos. se cambia con pulsador y con UART
 uint8_t flagpul;								// Para antirebote
 uint8_t info[1]	=	"";							// Recepcion de UART
@@ -57,7 +61,8 @@ uint8_t flagespecial; 							// Para que funcionen los dos sensores
 	void confUART();
 	void confDMA();
 	void itoa(uint16_t num, char* str); 		// Convierte de integer a ASCII
-
+	void numtoarray(uint16_t num,uint16_t array[]); // coloca el numero que se le pasa en el elemento 0 del array. ordena
+	void decidir();
 //------------------------------------------------------//
 //----------------- PROGRAMA PRINCIPAL -----------------//
 int main(){
@@ -349,25 +354,24 @@ void confUART(){
 	return;
 }
 
-// TODO - MODIFICAR POR EL DMA
+
 void confDMA(){
-	NVIC_DisableIRQ(DMA_IRQn);
 
 	GPDMA_Init();                // Inicializo el controlador de DMA
 
 	GPDMA_Channel_CFG_Type DMAUARTConfig;
 	DMAUARTConfig.ChannelNum = 0;
-	DMAUARTConfig.SrcMemAddr = 0;
-	DMAUARTConfig.DstMemAddr = (uint32_t)(SelSensor);
-	DMAUARTConfig.TransferSize = sizeof(SelSensor);
+	DMAUARTConfig.SrcMemAddr = (uint32_t)(RegHumDMA);
+	DMAUARTConfig.DstMemAddr = 0;
+	DMAUARTConfig.TransferSize = sizeof(RegHumDMA);
 	DMAUARTConfig.TransferWidth = 0;
-	DMAUARTConfig.TransferType = GPDMA_TRANSFERTYPE_P2M;
-	DMAUARTConfig.SrcConn = GPDMA_CONN_UART2_Rx;
-	DMAUARTConfig.DstConn = 0;
+	DMAUARTConfig.TransferType = GPDMA_TRANSFERTYPE_M2P;
+	DMAUARTConfig.SrcConn = 0;
+	DMAUARTConfig.DstConn = GPDMA_CONN_UART2_Tx;
 	DMAUARTConfig.DMALLI = 0;
 
 	GPDMA_Setup(&DMAUARTConfig);
-
+    GPDMA_ChannelCmd(0,ENABLE);
 	return;
 }
 
@@ -451,8 +455,16 @@ void EINT1_IRQHandler(){
 	if(flagpul==0){
 		GPIO_SetValue(2,PIN_6); 	// Enciende el LED BLANCO
 		flagpul=1;
-									// TODO - hacer algo aca
 		confTIMER0(); 				// Antirebote
+		NVIC_DisableIRQ(TIMER1_IRQn);
+
+		decidir(); 					// Analiza si mandar una W o una G
+		confDMA();					// Enviar datos por DMA
+		uint8_t info[]	=	{'\n'};
+
+		UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
+
+		NVIC_EnableIRQ(TIMER1_IRQn);
 	}
 
 	EXTI_ClearEXTIFlag(EXTI_EINT1);	// Limpia la bandera del EINT1
@@ -477,7 +489,9 @@ void ADC_IRQHandler(){
 		// Ecuacion de calibracion del sensor de humedad
 		ADC4Value			=	100 * (ADC4ValueMaximo - ADC4ValueOriginal) / (ADC4ValueMaximo - ADC4ValueMinimo);
 
-		itoa(ADC4Value,resultadoHum);											// Valor de humedad
+		numtoarray(ADC4Value,RegHum);										// guarda los ultimo 10 valores
+
+		itoa(ADC4Value,resultadoHum);										// Valor de humedad
 
 	}
 
@@ -603,4 +617,25 @@ void UART2_IRQHandler(void){
 	}
 
 	return;
+}
+
+void numtoarray(uint16_t num,uint16_t *array){ // Guardamos los ultimos 10 valores
+	for(uint8_t i=9;i>0;i--){
+		array[i]=array[i-1];
+	}
+	array[0]=num;								// El 0 es el mas actual
+}
+
+void decidir(){
+	static uint16_t suma=0;
+	suma=0;
+	for(uint8_t i=0;i<10;i++){
+		suma=suma+RegHum[i];	// Suma de los ultimos 10 valores de humedad
+	}
+	suma=suma/10;			// Obtenemos promedio
+	if(suma>20){			//
+		RegHumDMA[0] = 'G'; // "Good" imagen de tilde
+	}else{
+		RegHumDMA[0] = 'W'; // "Warning" imagen de precaucion.
+	}
 }
