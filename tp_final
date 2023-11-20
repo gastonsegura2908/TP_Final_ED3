@@ -1,6 +1,17 @@
-// TRABAJO TP FINAL ELECTRONICA DIGITAL 3
-///*
+/* 	TRABAJO PRACTICO FINAL - ELECTRONICA DIGITAL 3 - 2023
+ * 	-----------------------------------------------------
+ * 		"Monitoreo de Condiciones Climáticas del Suelo"
+ *	Utilizando el microcontrolador LPC1769,
+ *	sensores de temperatura y huemdad en suelo.
+ *	-----------------------------------------------------
+ *	Integrantes del grupo 10:
+ *			Segura, Gaston.
+ *			Mayorga, Federica
+ *			Kulyk, Antonin
+ */
 
+
+//-------- HEADERS --------//
 #include "LPC17xx.h"
 #include "lpc17xx_dac.h"
 #include "lpc17xx_adc.h"
@@ -9,61 +20,59 @@
 #include "lpc17xx_gpdma.h"
 #include "lpc17xx_exti.h"
 #include "lpc17xx_gpio.h"
-#include "lpc17xx_uart.h"
+#include "lpc17xx_UART.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
 
-#define PIN_20 ((uint32_t)(1<<20))
-#define PIN_21 ((uint32_t)(1<<21))
-#define PIN_6 ((uint32_t)(1<<6))
+//-------- MACROS --------//
+#define PIN_20 ((uint32_t)(1<<20))				// LED AZUL
+#define PIN_21 ((uint32_t)(1<<21))				// LED ROJO
+#define PIN_6  ((uint32_t)(1<<6))				// LED BLANCO
 
-volatile uint16_t ADC5Valueoriginal=0;//resultado conversion temperatura sin formula
-volatile uint16_t ADC4Valueoriginal=0;//resultado conversion humedad sin formula
-volatile uint16_t ADC5Value=0;//resultado conversion temperatura
-volatile uint16_t ADC4Value=0;//resultado conversion humedad
+//-------- GLOBALES --------//
+volatile uint16_t ADC5ValueOriginal	=	0;		// Resultado conversion temperatura sin formula
+volatile uint16_t ADC4ValueOriginal	=	0;		// Resultado conversion humedad sin formula
+volatile uint16_t ADC5Value			=	0;		// Resultado conversion temperatura
+volatile uint16_t ADC4Value			=	0;		// Resultado conversion humedad
+volatile int16_t  ADC4ValueMaximo	=	4095; 	// Para calibrar sensor de humedad
+volatile int16_t  ADC4ValueMinimo	=	1200; 	// Para calibrar sensor de humedad
 
-volatile int16_t ADC4ValueMaximo		=	4095; // para calibrar sensor de humedad
-volatile int16_t ADC4ValueMinimo		=	1200; // para calibrar sensor de humedad
+char resultadoHum[]	=	" ";					// Para enviar por UART
+char resultadoTem[]	=	" ";					// Para enviar por UART
 
-char resultadoHum[]=" ";// a enviar por uart
-char resultadoTem[]=" ";// a enviar por uart
+uint8_t SelSensor;								// Selecciona el modo de uso . con 0 los dos apagados,con 1 usamos el sensor de humedad y con 2 el de temperatura, 3 ambos. se cambia con pulsador y con UART
+uint8_t flagpul;								// Para antirebote
+uint8_t info[1]	=	"";							// Recepcion de UART
+uint8_t flagespecial; 							// Para que funcionen los dos sensores
 
-uint8_t SelSensor;// selecciona el modo de uso . con 0 los dos apagados,con 1 usamos el sensor de humedad y con 2 el de temperatura, 3 ambos. se cambia con pulsador y con uart
-
-uint8_t flagpul;//para antirebote
-
-uint8_t info[1] = ""; // recepcion de uart
-
-uint8_t flagespecial; // para que funcionen los dos sensores
-
+//-------- PRE PROTOTIPADO --------//
 	void confPIN();
-	void configADC(uint8_t num);
-
+	void confTIMER0();							// Antirebote y LED 3
+	void confTIMER1();							// Comienza la conversion del ADC
+	void confTIMER2(); 							// Envia por UART
+	void confADC(uint8_t num);
 	void confEXTINT();
-	void confUart();
-
-	void confTIMER2(); // enviar por uart
-	void confTIMER1(); // comienza la conversion del adc
-	void confTIMER0();// antirebote y led 3
-
+	void confUART();
 	void confDMA();
+	void itoa(uint16_t num, char* str); 		// Convierte de integer a ASCII
 
-	void itoa(uint16_t num, char* str); // int to ascii
-
+//------------------------------------------------------//
+//----------------- PROGRAMA PRINCIPAL -----------------//
 int main(){
-	GPIO_ClearValue(1,PIN_20);
-	GPIO_ClearValue(1,PIN_21);
-	GPIO_ClearValue(2,PIN_6);
+	GPIO_ClearValue(1, PIN_20);
+	GPIO_ClearValue(1, PIN_21);
+	GPIO_ClearValue(2, PIN_6);
 
-	SelSensor=0;
-	flagpul=0;
-	flagespecial=0;
+	SelSensor	=	0;
+	flagpul		=	0;
+	flagespecial=	0;
 
-	confPIN(); //configuramos todos los pines
-	confEXTINT();//configuramos las interrupciones externas
+	confPIN();						// Configura los pines
+	confEXTINT();					// Configura las interrupciones externas
 
-	confUart();
+	confUART();
 
 	confTIMER2();
 	confTIMER1();
@@ -77,42 +86,53 @@ int main(){
 
 	return 0;
 }
+//------------------------------------------------------//
 
+//-------- PROTOTIPADO --------//
+/* Configura los pines de:
+ * 		ADC0.4
+ * 		ADC0.5
+ * 		P2.10 con EXT0
+ * 		P2.11 con EXT1
+ * 		Pines de Transmision y Recepcion de datos
+ *
+ * @param	ninguno
+ * @return	ninguno
+ */
 void confPIN(){
-	GPIO_SetDir(1,PIN_20,1);
-	GPIO_SetDir(1,PIN_21,1);
-	GPIO_SetDir(2,PIN_6,1);
+	GPIO_SetDir(1, PIN_20, 1);
+	GPIO_SetDir(1, PIN_21, 1);
+	GPIO_SetDir(2, PIN_6,  1);
 
-	PINSEL_CFG_Type structPINADC5;// ADC0.5 - sensor de temperatura
-	structPINADC5.Pinnum=31;
-	structPINADC5.Portnum=1;
-	structPINADC5.Funcnum=3;
-	structPINADC5.Pinmode=2;
-	PINSEL_ConfigPin(&structPINADC5);
-
-	PINSEL_CFG_Type structPINADC4;// ADC0.4 - sensor de humedad
-	structPINADC4.Pinnum=30;
-	structPINADC4.Portnum=1;
-	structPINADC4.Funcnum=3;
-	structPINADC4.Pinmode=2;
+	PINSEL_CFG_Type structPINADC4;		// ADC0.4 - sensor de humedad
+	structPINADC4.Pinnum	=	30;
+	structPINADC4.Portnum	=	1;
+	structPINADC4.Funcnum	=	3;
+	structPINADC4.Pinmode	=	2;		// No es pull up ni pull down
 	PINSEL_ConfigPin(&structPINADC4);
 
-	PINSEL_CFG_Type structPINEXT0;// PINEXT 2.10. LED blanco
-	structPINEXT0.Pinnum=10;
-	structPINEXT0.Portnum=2;
-	structPINEXT0.Funcnum=1;
-	structPINEXT0.Pinmode=0;//pull up
+	PINSEL_CFG_Type structPINADC5;		// ADC0.5 - sensor de temperatura
+	structPINADC5.Pinnum	=	31;
+	structPINADC5.Portnum	=	1;
+	structPINADC5.Funcnum	=	3;
+	structPINADC5.Pinmode	=	2;		// No es pull up ni pull down
+	PINSEL_ConfigPin(&structPINADC5);
+
+	PINSEL_CFG_Type structPINEXT0;		// PINEXT 2.10 - LED blanco
+	structPINEXT0.Pinnum	=	10;
+	structPINEXT0.Portnum	=	2;
+	structPINEXT0.Funcnum	=	1;		// Funcion de EXT0
+	structPINEXT0.Pinmode	=	0;		// Resistencia de pull up
 	PINSEL_ConfigPin(&structPINEXT0);
 
-	PINSEL_CFG_Type structPINEXT1;// PINEXT 2.11. LED blanco
+	PINSEL_CFG_Type structPINEXT1;		// PINEXT 2.11 -  LED blanco
 	structPINEXT1.Pinnum=11;
 	structPINEXT1.Portnum=2;
 	structPINEXT1.Funcnum=1;
-	structPINEXT1.Pinmode=0;//pull up
+	structPINEXT1.Pinmode=0;			// Resistencia de pull up
 	PINSEL_ConfigPin(&structPINEXT1);
 
-	PINSEL_CFG_Type PinCfg;
-	//configuracion pin de TX2 y RX2
+	PINSEL_CFG_Type PinCfg;				// TX2 y RX2
 	PinCfg.Funcnum = 1;
 	PinCfg.OpenDrain = 0;
 	PinCfg.Pinmode = 0;
@@ -121,13 +141,16 @@ void confPIN(){
 	PINSEL_ConfigPin(&PinCfg);
 	PinCfg.Pinnum = 11;
 	PINSEL_ConfigPin(&PinCfg);
-	return;
 
+	return;
 }
 
-
-void confTIMER0()// 1,5. antirebote y led 3
-{
+/*	Configura el timer 0 cada 1,5 [seg]
+ *
+ * @param	ninguno
+ * @return	ninguno
+ */
+void confTIMER0(){
 	TIM_TIMERCFG_Type    struct_config;
 	TIM_MATCHCFG_Type    struct_match;
 
@@ -135,26 +158,33 @@ void confTIMER0()// 1,5. antirebote y led 3
 	struct_config.PrescaleValue     =    1;
 
 	struct_match.MatchChannel       =    0;
-	struct_match.IntOnMatch         =    ENABLE; //habilitamos las interrupciones por timer
-	struct_match.ResetOnMatch       =    ENABLE;//resetea el contador del timer cuando se produce un match
-	struct_match.StopOnMatch        =    DISABLE; //no detiene el contador del timer cuando se produce un match
+	struct_match.IntOnMatch         =    ENABLE; 				// Habilita las interrupciones por timer 0
+	struct_match.ResetOnMatch       =    ENABLE;				// Resetea el contador del timer 0 cuando se produce un match
+	struct_match.StopOnMatch        =    DISABLE;				// No detiene el contador del timer 0 cuando se produce un match
 	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_NOTHING;
 
-	struct_match.MatchValue         =    37500000-1;//1.5 segundos
+	struct_match.MatchValue         =    37500000-1;			// 1.5 [segundos]
 
-	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &struct_config); //se prende el TIMER0, se configura la division del clock del periferico, y se
-	//configura el timer como modo temporizador y ademas se retesea el contador y se lo saca del reset
-	TIM_ConfigMatch(LPC_TIM0, &struct_match); //carga todas las configuraciones del struct_match en ls registros correspondientes
+	TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &struct_config); 		// Enciende el timer 0, configura la division del clock del periferico,
+																// y configura el timer 0 en modo temporizador.
+																// Ademas retesea el contador y lo saca del reset.
+
+	TIM_ConfigMatch(LPC_TIM0, &struct_match); 					// Carga todas las configuraciones del struct_match en los registros correspondientes
 
 	TIM_ResetCounter(LPC_TIM0);
-	TIM_Cmd(LPC_TIM0, ENABLE); //habilita el contador del timer
+	TIM_Cmd(LPC_TIM0, ENABLE); 									// Habilita el contador del timer 0
 
-	NVIC_EnableIRQ(TIMER0_IRQn);
+	NVIC_EnableIRQ(TIMER0_IRQn);								// Habilita las interrupciones por timer 0
 
 	return;
 }
 
-void confTIMER1(){ // 1 segundo. comienza la conversion del adc
+/*	Configura el timer 1 cada 1 [seg] y comienza la conversion del ADC
+ *
+ * 	@param	ninguno
+ * 	@return ninugno
+ */
+void confTIMER1(){
 	TIM_TIMERCFG_Type    struct_config;
 	TIM_MATCHCFG_Type    struct_match;
 
@@ -162,27 +192,33 @@ void confTIMER1(){ // 1 segundo. comienza la conversion del adc
 	struct_config.PrescaleValue     =    1;
 
 	struct_match.MatchChannel       =    0;
-	struct_match.IntOnMatch         =    ENABLE; //habilitamos las interrupciones por timer
-	struct_match.ResetOnMatch       =    ENABLE;//resetea el contador del timer cuando se produce un match
-	struct_match.StopOnMatch        =    DISABLE; //no se detiene el contador del timer cuando se produce un match
+	struct_match.IntOnMatch         =    ENABLE;				// Habilita las interrupciones por timer 1
+	struct_match.ResetOnMatch       =    ENABLE;				// Resetea el contador del timer 1 cuando se produce un match
+	struct_match.StopOnMatch        =    DISABLE;				// No se detiene el contador del timer 1 cuando se produce un match
 	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_NOTHING;
 
-	struct_match.MatchValue         =    25000000-1;//1 segundo
+	struct_match.MatchValue         =    25000000-1;			// 1 [segundo]
 
-	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &struct_config); //se prende el TIMER1, se configura la division del clock del periferico, y se
-	//configura el timer como modo temporizador y ademas se retesea el contador y se lo saca del reset
-	TIM_ConfigMatch(LPC_TIM1, &struct_match); //carga todas las configuraciones del struct_match en ls registros correspondientes
+	TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &struct_config); 		// Enciende el timer 1, configura la division del clock del periferico,
+																// y configura el timer 1 en modo temporizador.
+																// Ademas retesea el contador y lo saca del reset.
+
+	TIM_ConfigMatch(LPC_TIM1, &struct_match);					// Carga todas las configuraciones del struct_match en los registros correspondientes
 
 	TIM_ResetCounter(LPC_TIM1);
-	TIM_Cmd(LPC_TIM1, ENABLE); //habilita el contador del timer.
+	TIM_Cmd(LPC_TIM1, ENABLE); 									// Habilita el contador del timer 1
 
-	NVIC_EnableIRQ(TIMER1_IRQn);
+	NVIC_EnableIRQ(TIMER1_IRQn);								// Habilita las interrupciones por timer 1
 
 	return;
 }
 
-void confTIMER2()// timer para ENVIAR cada 2 segundos los datos de los sensores
-{
+/*	Configura el timer 2 para enviar cada 2 [segundos] los datos de los sensores
+ *
+ * 	@param	ninguno
+ * 	@return	ninugno
+ */
+void confTIMER2(){
 	TIM_TIMERCFG_Type    struct_config;
 	TIM_MATCHCFG_Type    struct_match;
 
@@ -190,135 +226,131 @@ void confTIMER2()// timer para ENVIAR cada 2 segundos los datos de los sensores
 	struct_config.PrescaleValue     =    1;
 
 	struct_match.MatchChannel       =    0;
-	struct_match.IntOnMatch         =    ENABLE; //habilitamos las interrupciones por timer
-	struct_match.ResetOnMatch       =    ENABLE;//resetea el contador del timer cuando se produce un match
-	struct_match.StopOnMatch        =    DISABLE; //no detiene el contador del timer cuando se produce un match
+	struct_match.IntOnMatch         =    ENABLE; 				// Habilita las interrupciones por timer 2
+	struct_match.ResetOnMatch       =    ENABLE;				// Resetea el contador del timer 2 cuando se produce un match
+	struct_match.StopOnMatch        =    DISABLE;				// No detiene el contador del timer 2 cuando se produce un match
 	struct_match.ExtMatchOutputType =    TIM_EXTMATCH_NOTHING;
 
-	struct_match.MatchValue         =    50000000-1;//2 segundos
+	struct_match.MatchValue         =    50000000-1;			// 2 [segundos]
 
-	TIM_Init(LPC_TIM2, TIM_TIMER_MODE, &struct_config); //se prende el TIMER2, se configura la division del clock del periferico, y se
-	//configura el timer como modo temporizador y ademas se retesea el contador y se lo saca del reset
-	TIM_ConfigMatch(LPC_TIM2, &struct_match); //carga todas las configuraciones del struct_match en ls registros correspondientes
+	TIM_Init(LPC_TIM2, TIM_TIMER_MODE, &struct_config);			// Enciende el timer 2, configura la division del clock del periferico,
+																// y configura el timer como modo temporizador
+																// Ademas retesea el contador y lo saca del reset
+
+	TIM_ConfigMatch(LPC_TIM2, &struct_match); 					// Carga todas las configuraciones del struct_match en los registros correspondientes
 
 	TIM_ResetCounter(LPC_TIM2);
-	TIM_Cmd(LPC_TIM2, ENABLE); //habilita el contador del timer
+	TIM_Cmd(LPC_TIM2, ENABLE); 									// Habilita el contador del timer 2
 
-	NVIC_EnableIRQ(TIMER2_IRQn);
+	NVIC_EnableIRQ(TIMER2_IRQn);								// Habilita las interrupciones por timer 2
 
 	return;
 }
 
-void configADC(uint8_t num)// convierte la señal analogica de los sensores analogicos,en digital
-{
-
-	ADC_Init(LPC_ADC, 200000); //ENCIENDO ADC
-	if(num==0){
-		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,DISABLE); //humedad
-		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_5,DISABLE); //temperatura
-		GPIO_ClearValue(1,PIN_20); // apaga led
-		GPIO_ClearValue(1,PIN_21);
-	}else if(num==1){
-		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,ENABLE); //humedad
-		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_5,DISABLE); //temperatura
-		GPIO_SetValue(1,PIN_20); //prende led
-		GPIO_ClearValue(1,PIN_21);
-	}else if(num==2){
-		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,DISABLE); //humedad
-		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_5,ENABLE); //temperatura
-		GPIO_ClearValue(1,PIN_20);
-		GPIO_SetValue(1,PIN_21);
+/*	Configura el ADC para covnertir la señal analogica de los sensores, en digitales
+ *
+ * 	@param	ninguno
+ * 	@return ninguno
+ */
+void confADC(uint8_t num){
+	ADC_Init(LPC_ADC, 200000);							// Inicializa el ADC
+	if(num == 0){
+		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,DISABLE); // Canal del sensor de humedad
+		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_5,DISABLE); // Canal del sensor de temperatura
+		if(flagespecial == 0){
+			GPIO_ClearValue(1, PIN_20); 						// Apaga el LED
+			GPIO_ClearValue(1, PIN_21);						// Apaga el LED
+		}
+	}else if(num == 1){
+		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,ENABLE);	// Canal del sensor de humedad
+		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_5,DISABLE); // Canal del sensor de temperatura
+		if(flagespecial == 0){
+			GPIO_SetValue(1, PIN_20);						// Enciende el LED
+			GPIO_ClearValue(1, PIN_21);						// Apaga el LED
+		}
+	}else if(num == 2){
+		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_4,DISABLE); // Canal del sensor de humedad
+		ADC_ChannelCmd(LPC_ADC, ADC_CHANNEL_5,ENABLE);	// Canal del sensor de temperatura
+		if(flagespecial == 0){
+			GPIO_ClearValue(1, PIN_20);						// Apaga el LED
+			GPIO_SetValue(1, PIN_21);						// Enciende el LED
+		}
 	}
 
-	ADC_BurstCmd(LPC_ADC, DISABLE);//Modo burst apagado
-	ADC_StartCmd(LPC_ADC, ADC_START_NOW);    //START CON MATCH, DEBE MUESTREAR CADA 1 SE
-	ADC_IntConfig(LPC_ADC, ADC_ADGINTEN, SET);//Activo las interrupciones
+	ADC_BurstCmd(LPC_ADC, DISABLE);						// Modo burst apagado
+	ADC_StartCmd(LPC_ADC, ADC_START_NOW);    			// Modo de Start con match, muestrea cada 1 [segundo]
 
-	ADC_GlobalGetStatus(LPC_ADC, 1); //Bajo la bandera
-	NVIC_EnableIRQ(ADC_IRQn);
+	ADC_IntConfig(LPC_ADC, ADC_ADINTEN4, SET);			// Activa las interrupciones del canal 4.
+	ADC_IntConfig(LPC_ADC, ADC_ADINTEN5, SET);			// Activa las interrupciones del canal 5.
+
+	ADC_GlobalGetStatus(LPC_ADC, 1);					// Limpia la bandera del ADC
+	NVIC_EnableIRQ(ADC_IRQn);							// Habilita las interrupciones por ADC
 
 	return;
 }
 
-void confUart(){
-	UART_CFG_Type UARTConfigStruct;//variable auxiliar. es una estructura que es utilizada por las funciones del driver  para mostrar/sacar valores para realizar la configuracion
-	UART_FIFO_CFG_Type UARTFIFOConfigStruct;
-	UART_ConfigStructInit(&UARTConfigStruct);
-	//inicializa periferico
-	UART_Init(LPC_UART2, &UARTConfigStruct);
-
-	UARTFIFOConfigStruct.FIFO_DMAMode = ENABLE;
-	UARTFIFOConfigStruct.FIFO_Level = UART_FIFO_TRGLEV0;
-	UARTFIFOConfigStruct.FIFO_ResetRxBuf = ENABLE;
-	UARTFIFOConfigStruct.FIFO_ResetTxBuf = ENABLE;
-	UART_FIFOConfigStructInit(&UARTFIFOConfigStruct);
-	//Inicializa FIFO
-	UART_FIFOConfig(LPC_UART2, &UARTFIFOConfigStruct);//funcion que lleva a cabo la inicializacion
-	//Habilita transmision
-	UART_TxCmd(LPC_UART2, ENABLE);
-
-	// Habilita interrupcion por el RX del UART
-	UART_IntConfig(LPC_UART2, UART_INTCFG_RBR, ENABLE);
-	// Habilita interrupcion por el estado de la linea UART
-	UART_IntConfig(LPC_UART2, UART_INTCFG_RLS, ENABLE);
-
-	//Habilita interrupcion por UART2
-	NVIC_EnableIRQ(UART2_IRQn);
-	return;
-}
-
+/*	Configura las interrupciones externas
+ *
+ *	@param	ninguno
+ *	@return ninguno
+ */
 void confEXTINT(){
-	EXTI_Init();
+	EXTI_Init();																// Inicializa las interrupciones externas
+
 	EXTI_InitTypeDef structEXTINT0;
-	structEXTINT0.EXTI_Line=EXTI_EINT0;
-	structEXTINT0.EXTI_Mode=EXTI_MODE_LEVEL_SENSITIVE;
-	structEXTINT0.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
+	structEXTINT0.EXTI_Line		=	EXTI_EINT0;
+	structEXTINT0.EXTI_Mode		=	EXTI_MODE_LEVEL_SENSITIVE;
+	structEXTINT0.EXTI_polarity	=	EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
 	EXTI_Config(&structEXTINT0);
-	EXTI_ClearEXTIFlag(EXTI_EINT0);//EINT0 ya q usamos p2.10
+	EXTI_ClearEXTIFlag(EXTI_EINT0);												// EINT0 porque es el  P2.10
 
 	EXTI_InitTypeDef structEXTINT1;
 	structEXTINT1.EXTI_Line=EXTI_EINT1;
 	structEXTINT1.EXTI_Mode=EXTI_MODE_LEVEL_SENSITIVE;
 	structEXTINT1.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
 	EXTI_Config(&structEXTINT1);
-	EXTI_ClearEXTIFlag(EXTI_EINT1);
+	EXTI_ClearEXTIFlag(EXTI_EINT1);												// EINT0 porque es el  P2.11
 
-	NVIC_EnableIRQ(EINT0_IRQn);//EINT0 ya q usamos p2.10
-	NVIC_EnableIRQ(EINT1_IRQn);//EINT1 ya q usamos p2.11
+	NVIC_EnableIRQ(EINT0_IRQn);													// Habilita las interrupciones externas por EINT0
+	NVIC_EnableIRQ(EINT1_IRQn);													// Habilita las interrupciones externas por EINT1
+
+	return;
 }
 
-void EINT0_IRQHandler(){
-	if(flagpul==0){
-		GPIO_SetValue(2,PIN_6);
-		flagpul=1;
-		SelSensor=SelSensor+1; // cambia de modo
-		if(SelSensor==4){
-			SelSensor=0;
-		}
-		if(SelSensor==3){
-			flagespecial=1; // ambos sensores
-		}else{
-			flagespecial=0;
-		}
-		confTIMER0(); // antirebote
-	}
+/*	Configura la comunicacion serie UART
+ *
+ * 	@param	ninguno
+ * 	@return ninguno
+ */
+void confUART(){
+	UART_CFG_Type UARTConfigStruct;									// Variable auxiliar
+																	// Es una estructura utilizada por las funciones del driver
+																	// para mostrar/sacar valores y realizar la configuracion
+	UART_ConfigStructInit(&UARTConfigStruct);
 
-	EXTI_ClearEXTIFlag(EXTI_EINT0);
+	UART_Init(LPC_UART2, &UARTConfigStruct);						// Inicializa periferico
+
+	UART_FIFO_CFG_Type UARTFIFOConfigStruct;
+	UARTFIFOConfigStruct.FIFO_DMAMode		=	ENABLE;
+	UARTFIFOConfigStruct.FIFO_Level			=	UART_FIFO_TRGLEV0;
+	UARTFIFOConfigStruct.FIFO_ResetRxBuf	=	ENABLE;
+	UARTFIFOConfigStruct.FIFO_ResetTxBuf	=	ENABLE;
+	UART_FIFOConfigStructInit(&UARTFIFOConfigStruct);
+
+	UART_FIFOConfig(LPC_UART2, &UARTFIFOConfigStruct);				// Inicializa FIFO
+
+	UART_TxCmd(LPC_UART2, ENABLE);									// Habilita transmision
+
+	UART_IntConfig(LPC_UART2, UART_INTCFG_RBR, ENABLE);				// Habilita interrupcion por el RX del UART
+	UART_IntConfig(LPC_UART2, UART_INTCFG_RLS, ENABLE);				// Habilita interrupcion por el estado de la linea UART
+
+	NVIC_EnableIRQ(UART2_IRQn);										// Habilita las interrupciones por UART2
+
+	return;
 }
 
-void EINT1_IRQHandler(){
-	if(flagpul==0){
-		GPIO_SetValue(2,PIN_6); // prende led
-		flagpul=1;
-		// hacer algo aca . todo
-		confTIMER0(); // antirebote
-	}
-
-	EXTI_ClearEXTIFlag(EXTI_EINT1);
-}
-
-void confDMA() //  todo
-{
+// TODO - MODIFICAR POR EL DMA
+void confDMA(){
 	NVIC_DisableIRQ(DMA_IRQn);
 
 	GPDMA_Init();                // Inicializo el controlador de DMA
@@ -339,154 +371,236 @@ void confDMA() //  todo
 	return;
 }
 
-void ADC_IRQHandler(){
-	if(LPC_ADC->ADDR5 &(1<<31)){ // bit DONE del canal 5
-		ADC5Valueoriginal = ((LPC_ADC->ADDR5)>>4) & 0xFFF;
-		ADC5Value = ((ADC5Valueoriginal * 3.3 * 100) / 4096)-5; // calibracion
-		itoa(ADC5Value, resultadoTem);// temperatura
-	}else if(LPC_ADC->ADDR4 &(1<<31)){  // bit DONE del canal 4
-		ADC4Valueoriginal = ((LPC_ADC->ADDR4)>>4) & 0xFFF;
-		ADC4Value = 100*(ADC4ValueMaximo - ADC4Valueoriginal)/(ADC4ValueMaximo - ADC4ValueMinimo); // calibracion
-		itoa(ADC4Value,resultadoHum); // humedad
-	}
+/*	Funcion que convierte los valores de integers a ASCII
+ *
+ * 	@param	num:	integer a convertir
+ * 	@param	str:	destino del integer convertido a ASCII
+ * 	@return ninguno
+ */
+void itoa(uint16_t num, char* str){
+    int i	=	0;
 
-}
+    // Manejo del numero 0 de forma explicita
+    if (num == 0){
+        str[i++]	=	'0';
+        str[i++]	=	'\0';
+        str[i] 		=	'\0';
 
-void TIMER0_IRQHandler()//1.5 segundos. antirebote y led 3
-{
-	flagpul=0;// habilita pulsadores
-	GPIO_ClearValue(2,PIN_6); // apaga led
-	TIM_ClearIntPending(LPC_TIM0,TIM_MR0_INT);
-	return;
-}
-
-void TIMER1_IRQHandler()// comienza la conversion del adc
-{
-	if(flagespecial==0){
-		configADC(SelSensor);
-	}else if(flagespecial==1){
-		GPIO_SetValue(1,PIN_20); //prende led
-		GPIO_SetValue(1,PIN_21); //prende led
-		configADC(1); // humedad
-		configADC(2); // temperatura
-	}
-	TIM_ClearIntPending(LPC_TIM1,TIM_MR0_INT);
-	return;
-}
-
-void TIMER2_IRQHandler()//2 segundos.envia por uart
-{
-	if(SelSensor==0){
-		uint8_t text[]={'N','\n'};
-		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
-	}
-	else if(SelSensor==1){
-		uint8_t text[]={'H','\n'};
-		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
-
-		UART_Send(LPC_UART2,(uint8_t*)resultadoHum,sizeof(resultadoHum), BLOCKING);
-	}else if(SelSensor==2){
-		uint8_t text[]={'T','\n'};
-		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
-
-		UART_Send(LPC_UART2,(uint8_t*)resultadoTem,sizeof(resultadoTem), BLOCKING);
-	}else if(SelSensor==3){
-		uint8_t text0[]={'A','\n'};
-		UART_Send(LPC_UART2, text0, sizeof(text0), BLOCKING);
-
-		uint8_t text[]={'T','\n'};
-		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
-		UART_Send(LPC_UART2,(uint8_t*)resultadoTem,sizeof(resultadoTem), BLOCKING);
-
-		uint8_t info[]={'\n'};
-		UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
-
-		uint8_t text2[]={'H','\n'};
-		UART_Send(LPC_UART2, text2, sizeof(text2), BLOCKING);
-		UART_Send(LPC_UART2,(uint8_t*)resultadoHum,sizeof(resultadoHum), BLOCKING);
-	}
-	uint8_t info[]={'\n'};
-	UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
-	//--------------------------
-	TIM_ClearIntPending(LPC_TIM2,TIM_MR0_INT);
-	return;
-}
-
-void itoa(uint16_t num, char* str)
-{
-    int i = 0;
-
-    if (num == 0)                // Manejo del numero 0 de forma explicita
-    {
-        str[i++]= '0';
-        str[i++]= '\0';
-        str[i] 	= '\0';
         return;
     }
 
-
-    while (num != 0)            // Se procesa cada digito de manera individual
-    {
-        int rem = num % 10;
-        str[i++] = (rem > 9)? (rem-10) + 'a' : rem + '0';   // Devuelve el equivalente en ASCII en orden inverso
+    // Procesa cada digito de manera individual
+    while (num != 0){
+        int rem		=	num % 10;
+        str[i++]	=	(rem > 9)? (rem-10) + 'a' : rem + '0';   // Devuelve el equivalente en ASCII en orden inverso
         num = num/10;
     }
 
     if(i==1){
     	str[i++] = '\0';
     }
+
     str[i] = '\0';
 
     int start = 0;
     int end = i -1;
     char aux;
 
-	while (start < end)       // Invierto los caracteres del string
-	{
-		aux = *(str+start);
-		*(str+start) = *(str+end);
-		*(str+end) = aux;
+    // Invierte los caracteres del string
+	while (start < end){
+		aux				=	*(str+start);
+		*(str+start)	=	*(str+end);
+		*(str+end)		=	aux;
 		start++;
 		end--;
 	}
+
     return;
 }
 
-void UART2_IRQHandler(void){
-	uint32_t intsrc, tmp, tmp1;
-	//Determina la fuente de interrupcion
-	intsrc = UART_GetIntId(LPC_UART2);
-	tmp = intsrc & UART_IIR_INTID_MASK;
-	// Evalua Line Status
-	if (tmp == UART_IIR_INTID_RLS){
-		tmp1 = UART_GetLineStatus(LPC_UART2);
-		tmp1 &= (UART_LSR_OE | UART_LSR_PE | UART_LSR_FE \
-				| UART_LSR_BI | UART_LSR_RXFE);
-		// ingresa a un Loop infinito si hay error
-		if (tmp1) {
-			while(1){};
+
+//-------- HANDLERS --------//
+/*	Handler de las interrupciones externas por EINT0
+ *
+ */
+void EINT0_IRQHandler(){
+	if(flagpul==0){
+		GPIO_SetValue(2,PIN_6);
+		flagpul=1;
+		SelSensor=SelSensor+1;		// Cambia el modo
+		if(SelSensor==4){
+			SelSensor=0;
 		}
-	}
-	// Receive Data Available or Character time-out
-	if ((tmp == UART_IIR_INTID_RDA) || (tmp == UART_IIR_INTID_CTI)){
-		UART_Receive(LPC_UART2, info, sizeof(info), NONE_BLOCKING);
+		if(SelSensor==3){
+			flagespecial=1;			// Ambos sensores
+		}else{
+			flagespecial=0;
+		}
+		confTIMER0();				// Antirebote
 	}
 
-	if(info[0]== '0'){
-		SelSensor=0;
-		flagespecial=0;
-	}else if(info[0]== '1'){
-		SelSensor=1;
-		flagespecial=0;
-	}else if(info[0]== '2'){
-		SelSensor=2;
-		flagespecial=0;
-	}else if((info[0]== '3')){
-		SelSensor=3;
-		flagespecial=1;
+	EXTI_ClearEXTIFlag(EXTI_EINT0);	// Limpia la bandera del EINT0
+
+	return;
+}
+
+/*	Handler de las interrupciones externas por EINT1
+ *
+ */
+void EINT1_IRQHandler(){
+	if(flagpul==0){
+		GPIO_SetValue(2,PIN_6); 	// Enciende el LED BLANCO
+		flagpul=1;
+									// TODO - hacer algo aca
+		confTIMER0(); 				// Antirebote
+	}
+
+	EXTI_ClearEXTIFlag(EXTI_EINT1);	// Limpia la bandera del EINT1
+}
+
+/*	Handler del ADC
+ *
+ */
+void ADC_IRQHandler(){
+
+	if(LPC_ADC->ADDR5 & (1<<31)){
+		// Si el bit DONE del canal 5 esta en 1
+		ADC5ValueOriginal	=	((LPC_ADC->ADDR5)>>4) & 0xFFF;
+		// Ecuacion de calibracion del sensor de temperatura
+		ADC5Value			=	((ADC5ValueOriginal * 3.3 * 100) / 4096)-5;
+
+		itoa(ADC5Value, resultadoTem);											// Valor de temperatura
+
+	}else if(LPC_ADC->ADDR4 & (1<<31)){
+		// Si el bit DONE del canal 4 esta en 1
+		ADC4ValueOriginal	=	((LPC_ADC->ADDR4)>>4) & 0xFFF;
+		// Ecuacion de calibracion del sensor de humedad
+		ADC4Value			=	100 * (ADC4ValueMaximo - ADC4ValueOriginal) / (ADC4ValueMaximo - ADC4ValueMinimo);
+
+		itoa(ADC4Value,resultadoHum);											// Valor de humedad
+
 	}
 
 	return;
 }
 
-//*/
+/*	Handler del timer 0
+ *
+ */
+void TIMER0_IRQHandler(){
+	flagpul = 0;								// Habilita pulsadores
+	GPIO_ClearValue(2, PIN_6); 					// Apaga el LED BLANCO
+	TIM_ClearIntPending(LPC_TIM0,TIM_MR0_INT);
+
+	return;
+}
+
+/*	Handler del timer 1
+ *
+ */
+void TIMER1_IRQHandler(){
+	if(flagespecial == 0){
+		confADC(SelSensor);
+	}else if(flagespecial == 1){ // conseguimos datos de ambos sensores
+		NVIC_DisableIRQ(TIMER1_IRQn);
+		GPIO_SetValue(1, PIN_20);	// Enciende el LED AZUL
+		GPIO_SetValue(1, PIN_21);	// Enciende el LED ROJO
+		confADC(1);
+		confADC(2);
+		NVIC_EnableIRQ(TIMER1_IRQn);
+	}
+
+	TIM_ClearIntPending(LPC_TIM1,TIM_MR0_INT);
+
+	return;
+}
+
+/*	Handler del timer 2
+ *
+ */
+void TIMER2_IRQHandler(){
+	if(SelSensor == 0){
+		uint8_t text[]	=	{'N','\n'};
+		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
+	}
+	else if(SelSensor == 1){
+		uint8_t text[]	=	{'H','\n'};
+		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
+
+		UART_Send(LPC_UART2, (uint8_t*)resultadoHum, sizeof(resultadoHum), BLOCKING);
+	}else if(SelSensor == 2){
+		uint8_t text[]	=	{'T','\n'};
+		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
+
+		UART_Send(LPC_UART2, (uint8_t*)resultadoTem, sizeof(resultadoTem), BLOCKING);
+	}else if(SelSensor == 3){
+		uint8_t text0[]	=	{'A','\n'};
+		UART_Send(LPC_UART2, text0, sizeof(text0), BLOCKING);
+
+		uint8_t text[]	=	{'T','\n'};
+		UART_Send(LPC_UART2, text, sizeof(text), BLOCKING);
+		UART_Send(LPC_UART2, (uint8_t*)resultadoTem, sizeof(resultadoTem), BLOCKING);
+
+		uint8_t info[]	=	{'\n'};
+		UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
+
+		uint8_t text2[]	=	{'H','\n'};
+		UART_Send(LPC_UART2, text2, sizeof(text2), BLOCKING);
+		UART_Send(LPC_UART2, (uint8_t*)resultadoHum, sizeof(resultadoHum), BLOCKING);
+	}
+
+	uint8_t info[]	=	{'\n'};
+	UART_Send(LPC_UART2, info, sizeof(info), BLOCKING);
+
+	TIM_ClearIntPending(LPC_TIM2, TIM_MR0_INT);
+
+	return;
+}
+
+/*	Handler de la comunicacion serie UART2
+ *
+ */
+void UART2_IRQHandler(void){
+	uint32_t intsrc, tmp, tmp1;
+
+	intsrc = UART_GetIntId(LPC_UART2);							// Determina la fuente de interrupcion
+	tmp = intsrc & UART_IIR_INTID_MASK;
+
+	// Evalua a Line Status
+	if (tmp == UART_IIR_INTID_RLS){
+		tmp1 = UART_GetLineStatus(LPC_UART2);
+		tmp1 &= (UART_LSR_OE | UART_LSR_PE | UART_LSR_FE \
+				| UART_LSR_BI | UART_LSR_RXFE);
+
+		// Ingresa a un loop infinito si hay error
+		if (tmp1) {
+			while(1){
+
+			};
+		}
+	}
+
+	// Si recibe datos disponibles o el tiempo de espera del caracter
+	if ((tmp == UART_IIR_INTID_RDA) || (tmp == UART_IIR_INTID_CTI)){
+		UART_Receive(LPC_UART2, info, sizeof(info), NONE_BLOCKING);
+	}
+
+	if(info[0] == '0'){
+		SelSensor	=	0;
+		flagespecial=	0;
+
+	}else if(info[0] == '1'){
+		SelSensor	=	1;
+		flagespecial=	0;
+
+	}else if(info[0] == '2'){
+		SelSensor	=	2;
+		flagespecial=	0;
+
+	}else if((info[0] == '3')){
+		SelSensor	=	3;
+		flagespecial=	1;
+	}
+
+	return;
+}
