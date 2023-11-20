@@ -80,7 +80,7 @@ int main(){
 	GPIO_ClearValue(1,PIN_20);
 	GPIO_ClearValue(1,PIN_21);
 	GPIO_ClearValue(2,PIN_6);
-
+	//info[0] = "0";// todo
 	SelSensor=0;// todo
 	//pul0=1;
 	flagpul=0;
@@ -608,13 +608,28 @@ void UART2_IRQHandler(void){
 	if ((tmp == UART_IIR_INTID_RDA) || (tmp == UART_IIR_INTID_CTI)){
 		UART_Receive(LPC_UART2, info, sizeof(info), NONE_BLOCKING);
 	}
-	SelSensor=info[0];//todo
+	//SelSensor=info[0];//todo
+	if(info[0]== '0'){
+		SelSensor=0;
+	}else if(info[0]== '1'){
+		SelSensor=1;
+	}else if(info[0]== '2'){
+		SelSensor=2;
+	}else if((info[0]== '3')){
+		SelSensor=3;
+	}
 
 	if(SelSensor==3){
 		flagespecial=1;
 	}else{
 		flagespecial=0;
 	}
+
+
+	//confTIMER1();
+	//confTIMER2();
+	//confDMA();
+	//TIM_ResetCounter(LPC_TIM1);
 
 	return;
 }
