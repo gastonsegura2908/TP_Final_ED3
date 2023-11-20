@@ -34,7 +34,8 @@ volatile uint16_t ADC5Value=0;//resultado conversion temperatura
 volatile uint16_t ADC4Value=0;//resultado conversion humedad
 //uint16_t valoresHum[10];
 //uint16_t valoresTem[10];
-
+volatile int16_t ADC4ValueMaximo		=	4095; // para calibrar sensor de humedad
+volatile int16_t ADC4ValueMinimo		=	1200; // para calibrar sensor de humedad
 //volatile uint8_t ValSentHum[1];
 //volatile uint8_t ValSentTem[1];
 
@@ -101,7 +102,7 @@ int main(){
 	TIM_ResetCounter(LPC_TIM2);
 	TIM_ResetCounter(LPC_TIM1);
 	//TIM_ResetCounter(LPC_TIM0);
-
+	//NVIC_EnableIRQ(UART2_IRQn);
 	while(1){
 		value++;// poner un breakpoint aca e ir apretando resumen para ver como funciona
 	}
@@ -128,12 +129,19 @@ void confPIN(){
 	structPINADC4.Pinmode=2;
 	PINSEL_ConfigPin(&structPINADC4);
 
-	PINSEL_CFG_Type structPINEXT0;// PINEXT 2.10. LED azul
+	PINSEL_CFG_Type structPINEXT0;// PINEXT 2.10. LED blanco
 	structPINEXT0.Pinnum=10;
 	structPINEXT0.Portnum=2;
 	structPINEXT0.Funcnum=1;
 	structPINEXT0.Pinmode=0;//pull up
 	PINSEL_ConfigPin(&structPINEXT0);
+
+	PINSEL_CFG_Type structPINEXT1;// PINEXT 2.11. LED blanco
+	structPINEXT1.Pinnum=11;
+	structPINEXT1.Portnum=2;
+	structPINEXT1.Funcnum=1;
+	structPINEXT1.Pinmode=0;//pull up
+	PINSEL_ConfigPin(&structPINEXT1);
 
 	PINSEL_CFG_Type PinCfg;
 	//configuracion pin de TX2 y RX2
@@ -278,33 +286,42 @@ void configADC(uint8_t num)// convierte la señal analogica de los sensores anal
 	ADC_BurstCmd(LPC_ADC, DISABLE);//Modo controlado // todo
 	ADC_StartCmd(LPC_ADC, ADC_START_NOW);    //START CON MATCH, DEBE MUESTREAR CADA 1 SE
 	ADC_IntConfig(LPC_ADC, ADC_ADGINTEN, SET);//Activo las interrupciones
-
+	NVIC_SetPriority(UART2_IRQn, 2);
 	ADC_GlobalGetStatus(LPC_ADC, 1); //Bajo la bandera
 	NVIC_EnableIRQ(ADC_IRQn);
 
 	return;
 }
 
-void confUart(){ // SACAR . todo
+void confUart(){
 	UART_CFG_Type UARTConfigStruct;//variable auxiliar. es una estructura que es utilizada por las funciones del driver  para mostrar/sacar valores para realizar la configuracion
 	UART_FIFO_CFG_Type UARTFIFOConfigStruct;
 	UART_ConfigStructInit(&UARTConfigStruct);
-	//inicializa perif rico
+	//inicializa periferico
 	UART_Init(LPC_UART2, &UARTConfigStruct);
 
 	UARTFIFOConfigStruct.FIFO_DMAMode = ENABLE;// todo . /// Habilita la escritura de la FIFO por DMA
 	UARTFIFOConfigStruct.FIFO_Level = UART_FIFO_TRGLEV0;
 	UARTFIFOConfigStruct.FIFO_ResetRxBuf = ENABLE;
 	UARTFIFOConfigStruct.FIFO_ResetTxBuf = ENABLE;
-
+	UART_FIFOConfigStructInit(&UARTFIFOConfigStruct);
 	//Inicializa FIFO
 	UART_FIFOConfig(LPC_UART2, &UARTFIFOConfigStruct);//funcion que lleva a cabo la inicializacion
 	//Habilita transmisi n
 	UART_TxCmd(LPC_UART2, ENABLE);
+
+	// Habilita interrupci�n por el RX del UART
+		UART_IntConfig(LPC_UART2, UART_INTCFG_RBR, ENABLE);
+		// Habilita interrupci�n por el estado de la linea UART
+		UART_IntConfig(LPC_UART2, UART_INTCFG_RLS, ENABLE);
+
+	//NVIC_SetPriority(UART2_IRQn, 3);
+		//Habilita interrupci�n por UART2
+	//NVIC_EnableIRQ(UART2_IRQn);
 	return;
 }
 
-void confUartRecib(void){
+void confUartRecib(void){ // NO SE USA
 
 	UART_CFG_Type      UARTConfigStruct;
 	UART_FIFO_CFG_Type UARTFIFOConfigStruct;
@@ -314,7 +331,7 @@ void confUartRecib(void){
 	UART_Init(LPC_UART2, &UARTConfigStruct);
 	//Inicializa FIFO
 	UART_FIFOConfigStructInit(&UARTFIFOConfigStruct);
-	UARTFIFOConfigStruct.FIFO_DMAMode = ENABLE;
+	//UARTFIFOConfigStruct.FIFO_DMAMode = ENABLE;
 	UART_FIFOConfig(LPC_UART2, &UARTFIFOConfigStruct);
 	// Habilita interrupci�n por el RX del UART
 	UART_IntConfig(LPC_UART2, UART_INTCFG_RBR, ENABLE);
@@ -322,7 +339,7 @@ void confUartRecib(void){
 	UART_IntConfig(LPC_UART2, UART_INTCFG_RLS, ENABLE);
 	//NVIC_SetPriority(UART2_IRQn, 1);
 	//Habilita interrupci�n por UART2
-	NVIC_EnableIRQ(UART2_IRQn);
+	//NVIC_EnableIRQ(UART2_IRQn);
 	return;
 }
 
@@ -335,7 +352,17 @@ void confEXTINT(){
 	EXTI_Config(&structEXTINT0);
 	EXTI_ClearEXTIFlag(EXTI_EINT0);//EINT0 ya q usamos p2.10
 
+
+
+	EXTI_InitTypeDef structEXTINT1;
+	structEXTINT1.EXTI_Line=EXTI_EINT1;//led rojo
+	structEXTINT1.EXTI_Mode=EXTI_MODE_LEVEL_SENSITIVE;
+	structEXTINT1.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
+	EXTI_Config(&structEXTINT1);
+	EXTI_ClearEXTIFlag(EXTI_EINT1);
+
 	NVIC_EnableIRQ(EINT0_IRQn);//EINT0 ya q usamos p2.10
+	//NVIC_EnableIRQ(EINT1_IRQn);//EINT1 ya q usamos p2.11
 }
 
 void EINT0_IRQHandler(){// // todo
@@ -368,6 +395,17 @@ void EINT0_IRQHandler(){// // todo
 	EXTI_ClearEXTIFlag(EXTI_EINT0);
 }
 
+void EINT1_IRQHandler(){
+	if(flagpul==0){
+		GPIO_SetValue(2,PIN_6);
+		flagpul=1;
+		// hacer algo aca . todo
+		confTIMER0();
+	}
+
+	EXTI_ClearEXTIFlag(EXTI_EINT1);
+}
+
 void confDMA() // configuramos el canal para recibir datos de la aplicacion // todo
 {
 	NVIC_DisableIRQ(DMA_IRQn);
@@ -390,7 +428,6 @@ void confDMA() // configuramos el canal para recibir datos de la aplicacion // t
 	return;
 }
 
-
 void ADC_IRQHandler(){
 	if(LPC_ADC->ADDR5 &(1<<31)){ // bit DONE del canal 5
 		ADC5Valueoriginal = ((LPC_ADC->ADDR5)>>4) & 0xFFF;
@@ -403,7 +440,8 @@ void ADC_IRQHandler(){
 		ADC4Valueoriginal = ((LPC_ADC->ADDR4)>>4) & 0xFFF;
 		//uint16_t value=((ADC4Valueoriginal-1.25)/(3.3-1.25))*4095;
 		//ADC4Valueoriginal = LPC_ADC->ADDR4;
-		ADC4Value= (ADC4Valueoriginal*3.3*100)/4095; // obtenemos el valor de humedad
+		ADC4Value = 100*(ADC4ValueMaximo - ADC4Valueoriginal)/(ADC4ValueMaximo - ADC4ValueMinimo);
+		//ADC4Value= (ADC4Valueoriginal*3.3*100)/4095; // obtenemos el valor de humedad
 		//ADC4Value= (100*(500-ADC4Valueoriginal))/(170-ADC4Valueoriginal);
 		//ADC4Value= ((ADC4Valueoriginal-2200)*100)/(4095-2200);
 		//numtoarray(ADC4Value,valoresHum);
@@ -422,6 +460,7 @@ void TIMER0_IRQHandler()//0.5 segundo.hanndler del timer para mandar datos de lo
 	GPIO_ClearValue(2,PIN_6);
 
 	TIM_ClearIntPending(LPC_TIM0,TIM_MR0_INT);
+
 
 	return;
 }
