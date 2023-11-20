@@ -317,7 +317,7 @@ void confUart(){
 
 	//NVIC_SetPriority(UART2_IRQn, 3);
 		//Habilita interrupci�n por UART2
-	//NVIC_EnableIRQ(UART2_IRQn);
+	NVIC_EnableIRQ(UART2_IRQn);
 	return;
 }
 
@@ -362,7 +362,7 @@ void confEXTINT(){
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 
 	NVIC_EnableIRQ(EINT0_IRQn);//EINT0 ya q usamos p2.10
-	//NVIC_EnableIRQ(EINT1_IRQn);//EINT1 ya q usamos p2.11
+	NVIC_EnableIRQ(EINT1_IRQn);//EINT1 ya q usamos p2.11
 }
 
 void EINT0_IRQHandler(){// // todo
