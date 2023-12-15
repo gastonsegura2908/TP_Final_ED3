@@ -1,0 +1,443 @@
+classdef app1TPFINALED3 < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        cambiarmodo            matlab.ui.Figure
+        CONECTARButton         matlab.ui.control.Button
+        DESCONECTARButton      matlab.ui.control.Button
+        MONITOREditFieldLabel  matlab.ui.control.Label
+        monitor                matlab.ui.control.EditField
+        ConexionLampLabel      matlab.ui.control.Label
+        ConexionLamp           matlab.ui.control.Lamp
+        DesconexionLampLabel   matlab.ui.control.Label
+        DesconexionLamp        matlab.ui.control.Lamp
+        SALIRButton            matlab.ui.control.Button
+        PuertodispLabel        matlab.ui.control.Label
+        ModoactualButtonGroup  matlab.ui.container.ButtonGroup
+        TemperaturaButton      matlab.ui.control.RadioButton
+        HumedadButton          matlab.ui.control.RadioButton
+        NingunoButton          matlab.ui.control.RadioButton
+        AmbosButton            matlab.ui.control.RadioButton
+        Label                  matlab.ui.control.Label
+        Label_2                matlab.ui.control.Label
+        Label_3                matlab.ui.control.Label
+        Label_4                matlab.ui.control.Label
+        CAMBIARMODOLabel       matlab.ui.control.Label
+        changemodo             matlab.ui.control.NumericEditField
+        sendUART               matlab.ui.control.Button
+        Image                  matlab.ui.control.Image
+        Image2                 matlab.ui.control.Image
+        SeMaKuLabel            matlab.ui.control.Label
+        version10Label         matlab.ui.control.Label
+        graficaHum             matlab.ui.control.UIAxes
+        graficaTem             matlab.ui.control.UIAxes
+    end
+
+    
+    properties (Access = private)
+        varglobal % para que no se repita la configuracion inicial
+        dataH % datos de humedad
+        dataT % datos de temperatura
+        corte % para cortar el while (al desconectar)
+        device % guarda el puerto seriañ
+        t % temperatura. sirve para graficar
+        h % humedad. sirve para graficar
+        a % para opcion ambos
+        decision % para elegir cual graficar
+    end
+    
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Code that executes after component creation
+        function startupFcn(app)
+           app.varglobal = 0 ;
+           app.PuertodispLabel.Text =serialportlist("available");
+           app.corte = 0;
+           app.a=1;
+           %addpath('C:\Users\Gaston\Downloads\imgmatlab');
+        end
+
+        % Button pushed function: CONECTARButton
+        function CONECTARButtonPushed(app, event)
+
+        app.varglobal = app.varglobal + 1;
+        app.corte = 1;
+        
+        app.ConexionLamp.Color= 'green';
+        app.DesconexionLamp.Color= 'white'; 
+            
+        if(app.varglobal==1) % configurar
+            
+            app.device=serialport("COM3",9600);
+            configureTerminator(app.device,"LF");%va a leer hasta que llegue:CR/LF (osea un final de linea y un enter)
+            app.t=1;
+            app.h=1;
+            app.a=1;
+            app.decision=1;
+            
+        end 
+      
+        
+        while(app.corte)
+           
+            app.monitor.Value=(readline(app.device));% guarda el valor de monitor
+            
+            %-------- modos
+            
+            if startsWith(app.monitor.Value,'H') %humedad
+                if (app.decision~=5) % si no entro primero la opcion ambas
+                   app.decision=2;
+                  
+                end
+                continue;
+            end
+            if startsWith(app.monitor.Value,'T') % temperatura
+                if (app.decision~=5) % si no entro primero la opcion ambas
+                   app.decision=3;
+                   
+                end           
+                continue;
+            end
+            if startsWith(app.monitor.Value,'N') % ningun grafico
+                app.decision=4;
+                
+                continue;
+            end
+            if startsWith(app.monitor.Value,'A') % ambos graficos
+                app.decision=5;
+                app.a=1;
+                
+                app.AmbosButton.Value = 1;
+                app.NingunoButton.Value = 0;
+                app.HumedadButton.Value = 0; 
+                app.TemperaturaButton.Value = 0;  
+                continue;
+            end
+            
+            if startsWith(app.monitor.Value,'G')
+                app.Image.Visible = 'on';
+                app.Image2.Visible = 'off';
+                continue;
+            end
+            
+            if startsWith(app.monitor.Value,'W')
+                app.Image.Visible = 'off';
+                app.Image2.Visible = 'on';
+                continue;
+            end
+            
+            %-------------------- tipos de graficos segun modo
+            
+            if((app.decision == 5) && (app.a==1)) % ambos graficos. primero humedad
+                app.dataH(app.h)=str2double(app.monitor.Value);%con readline leo lo q me mandan por serial y lo convertimos de string a double
+                plot(app.graficaHum,app.dataH); % graficamos los datos q llegan
+                app.h=app.h+1; % se va guardando en data los datos leidos
+                pause(0.01); 
+                app.a=2;
+                app.Image.Visible = 'off';
+                app.Image2.Visible = 'off';
+                continue;
+            end
+            
+            if ((app.decision == 5)) % ambos graficos. ahora temperatura
+                app.dataT(app.t)=str2double(app.monitor.Value);%con readline leo lo q me mandan por serial y lo convertimos de string a double
+                plot(app.graficaTem,app.dataT); % graficamos los datos q llegan
+                app.t=app.t+1; % se va guardando en data los datos leidos
+                pause(0.01); 
+                app.decision=1;
+                app.Image.Visible = 'off';
+                app.Image2.Visible = 'off';
+                continue;
+            end
+
+            if((app.decision == 2))  % humedad
+                if (((app.HumedadButton.Value) == 0 )) 
+                        app.HumedadButton.Value = 1;
+                        app.TemperaturaButton.Value = 0;
+                        app.AmbosButton.Value = 0;
+                        app.NingunoButton.Value = 0;
+                end
+                app.dataH(app.h)=str2double(app.monitor.Value);%con readline leo lo q me mandan por serial y lo convertimos de string a double
+                plot(app.graficaHum,app.dataH); % graficamos los datos q llegan
+                app.h=app.h+1; % se va guardando en data los datos leidos
+                pause(0.01); 
+                app.decision = 1;
+                app.Image.Visible = 'off';
+                app.Image2.Visible = 'off';
+            end
+            
+            if(app.decision == 3) % temperatura
+                if ((app.TemperaturaButton.Value == 0))
+                        app.TemperaturaButton.Value = 1;
+                        app.HumedadButton.Value = 0;
+                        app.AmbosButton.Value = 0; 
+                        app.NingunoButton.Value = 0;
+                end
+                app.dataT(app.t)=str2double(app.monitor.Value);%con readline leo lo q me mandan por serial y lo convertimos de string a double  
+                plot(app.graficaTem,app.dataT); % graficamos los datos q llegan
+                app.t=app.t+1; % se va guardando en data los datos leidos
+                pause(0.01); 
+                app.decision = 1;
+                app.Image.Visible = 'off';
+                app.Image2.Visible = 'off';
+            end
+            
+            if(app.decision == 4) % ningun grafico
+                if (app.NingunoButton.Value == 0)
+                        app.NingunoButton.Value = 1;
+                        app.HumedadButton.Value = 0; 
+                        app.TemperaturaButton.Value = 0; 
+                        app.AmbosButton.Value = 0; 
+                        
+                end
+                app.decision = 1;
+                app.Image.Visible = 'off';
+                app.Image2.Visible = 'off';
+            end
+        end
+        end
+
+        % Button pushed function: DESCONECTARButton
+        function DESCONECTARButtonPushed(app, event)
+            app.ConexionLamp.Color= 'white'; % cambiamos color de leds de la grafica
+            app.DesconexionLamp.Color= 'red'; % cambiamos color de leds de la grafica
+            
+            app.corte = 0;
+            
+        end
+
+        % Button pushed function: SALIRButton
+        function SALIRButtonPushed(app, event)
+            app.delete; %se sale la aplicacion al pulsar el boton
+        end
+
+        % Selection changed function: ModoactualButtonGroup
+        function ModoactualButtonGroupSelectionChanged(app, event)
+            selectedButton = app.ModoactualButtonGroup.SelectedObject;
+            
+        end
+
+        % Button pushed function: sendUART
+        function sendUARTButtonPushed(app, event)
+            write(app.device,num2str(app.changemodo.Value), "char"); % enviamos a la placa lo que se escribio en changemodo
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create cambiarmodo and hide until all components are created
+            app.cambiarmodo = uifigure('Visible', 'off');
+            app.cambiarmodo.Color = [0.8 0.8 0.8];
+            app.cambiarmodo.Position = [100 100 640 480];
+            app.cambiarmodo.Name = 'MATLAB App';
+
+            % Create CONECTARButton
+            app.CONECTARButton = uibutton(app.cambiarmodo, 'push');
+            app.CONECTARButton.ButtonPushedFcn = createCallbackFcn(app, @CONECTARButtonPushed, true);
+            app.CONECTARButton.BackgroundColor = [0 1 0];
+            app.CONECTARButton.Position = [26 63 118 68];
+            app.CONECTARButton.Text = 'CONECTAR';
+
+            % Create DESCONECTARButton
+            app.DESCONECTARButton = uibutton(app.cambiarmodo, 'push');
+            app.DESCONECTARButton.ButtonPushedFcn = createCallbackFcn(app, @DESCONECTARButtonPushed, true);
+            app.DESCONECTARButton.BackgroundColor = [1 0 0];
+            app.DESCONECTARButton.Position = [168 63 142 68];
+            app.DESCONECTARButton.Text = 'DESCONECTAR';
+
+            % Create MONITOREditFieldLabel
+            app.MONITOREditFieldLabel = uilabel(app.cambiarmodo);
+            app.MONITOREditFieldLabel.HorizontalAlignment = 'right';
+            app.MONITOREditFieldLabel.Position = [188 420 62 22];
+            app.MONITOREditFieldLabel.Text = 'MONITOR';
+
+            % Create monitor
+            app.monitor = uieditfield(app.cambiarmodo, 'text');
+            app.monitor.Position = [265 420 287 22];
+
+            % Create ConexionLampLabel
+            app.ConexionLampLabel = uilabel(app.cambiarmodo);
+            app.ConexionLampLabel.HorizontalAlignment = 'right';
+            app.ConexionLampLabel.Position = [39 33 56 22];
+            app.ConexionLampLabel.Text = 'Conexion';
+
+            % Create ConexionLamp
+            app.ConexionLamp = uilamp(app.cambiarmodo);
+            app.ConexionLamp.Position = [110 33 20 20];
+            app.ConexionLamp.Color = [1 1 1];
+
+            % Create DesconexionLampLabel
+            app.DesconexionLampLabel = uilabel(app.cambiarmodo);
+            app.DesconexionLampLabel.HorizontalAlignment = 'right';
+            app.DesconexionLampLabel.Position = [184 33 75 22];
+            app.DesconexionLampLabel.Text = 'Desconexion';
+
+            % Create DesconexionLamp
+            app.DesconexionLamp = uilamp(app.cambiarmodo);
+            app.DesconexionLamp.Position = [274 33 20 20];
+            app.DesconexionLamp.Color = [1 1 1];
+
+            % Create SALIRButton
+            app.SALIRButton = uibutton(app.cambiarmodo, 'push');
+            app.SALIRButton.ButtonPushedFcn = createCallbackFcn(app, @SALIRButtonPushed, true);
+            app.SALIRButton.BackgroundColor = [0.302 0.7451 0.9333];
+            app.SALIRButton.Position = [344 63 118 68];
+            app.SALIRButton.Text = 'SALIR';
+
+            % Create PuertodispLabel
+            app.PuertodispLabel = uilabel(app.cambiarmodo);
+            app.PuertodispLabel.FontColor = [1 1 1];
+            app.PuertodispLabel.Position = [544 378 66 22];
+            app.PuertodispLabel.Text = {'Puerto disp'; ''};
+
+            % Create ModoactualButtonGroup
+            app.ModoactualButtonGroup = uibuttongroup(app.cambiarmodo);
+            app.ModoactualButtonGroup.SelectionChangedFcn = createCallbackFcn(app, @ModoactualButtonGroupSelectionChanged, true);
+            app.ModoactualButtonGroup.Title = 'Modo actual:';
+            app.ModoactualButtonGroup.Position = [480 13 136 118];
+
+            % Create TemperaturaButton
+            app.TemperaturaButton = uiradiobutton(app.ModoactualButtonGroup);
+            app.TemperaturaButton.Text = 'Temperatura';
+            app.TemperaturaButton.Position = [11 24 114 27];
+
+            % Create HumedadButton
+            app.HumedadButton = uiradiobutton(app.ModoactualButtonGroup);
+            app.HumedadButton.Text = 'Humedad';
+            app.HumedadButton.Position = [11 47 99 31];
+
+            % Create NingunoButton
+            app.NingunoButton = uiradiobutton(app.ModoactualButtonGroup);
+            app.NingunoButton.Text = 'Ninguno';
+            app.NingunoButton.Position = [11 71 99 31];
+            app.NingunoButton.Value = true;
+
+            % Create AmbosButton
+            app.AmbosButton = uiradiobutton(app.ModoactualButtonGroup);
+            app.AmbosButton.Text = 'Ambos';
+            app.AmbosButton.Position = [11 -2 99 31];
+
+            % Create Label
+            app.Label = uilabel(app.ModoactualButtonGroup);
+            app.Label.Position = [111 77 25 22];
+            app.Label.Text = '0';
+
+            % Create Label_2
+            app.Label_2 = uilabel(app.ModoactualButtonGroup);
+            app.Label_2.Position = [111 51 25 22];
+            app.Label_2.Text = '1';
+
+            % Create Label_3
+            app.Label_3 = uilabel(app.ModoactualButtonGroup);
+            app.Label_3.Position = [111 27 25 22];
+            app.Label_3.Text = '2';
+
+            % Create Label_4
+            app.Label_4 = uilabel(app.ModoactualButtonGroup);
+            app.Label_4.Position = [111 3 25 22];
+            app.Label_4.Text = '3';
+
+            % Create CAMBIARMODOLabel
+            app.CAMBIARMODOLabel = uilabel(app.cambiarmodo);
+            app.CAMBIARMODOLabel.HorizontalAlignment = 'right';
+            app.CAMBIARMODOLabel.Position = [20 373 104 22];
+            app.CAMBIARMODOLabel.Text = 'CAMBIAR MODO:';
+
+            % Create changemodo
+            app.changemodo = uieditfield(app.cambiarmodo, 'numeric');
+            app.changemodo.Limits = [0 3];
+            app.changemodo.Position = [126 373 100 22];
+
+            % Create sendUART
+            app.sendUART = uibutton(app.cambiarmodo, 'push');
+            app.sendUART.ButtonPushedFcn = createCallbackFcn(app, @sendUARTButtonPushed, true);
+            app.sendUART.BackgroundColor = [1 1 0];
+            app.sendUART.Position = [234 373 100 22];
+            app.sendUART.Text = 'Enviar';
+
+            % Create Image
+            app.Image = uiimage(app.cambiarmodo);
+            app.Image.Visible = 'off';
+            app.Image.Position = [362 353 81 63];
+            app.Image.ImageSource = 'imagenTilde.png';
+
+            % Create Image2
+            app.Image2 = uiimage(app.cambiarmodo);
+            app.Image2.Visible = 'off';
+            app.Image2.Position = [442 353 83 63];
+            app.Image2.ImageSource = 'imagenWarning.png';
+
+            % Create SeMaKuLabel
+            app.SeMaKuLabel = uilabel(app.cambiarmodo);
+            app.SeMaKuLabel.BackgroundColor = [0 0 0];
+            app.SeMaKuLabel.FontName = 'Alef';
+            app.SeMaKuLabel.FontSize = 25;
+            app.SeMaKuLabel.FontWeight = 'bold';
+            app.SeMaKuLabel.FontColor = [1 1 1];
+            app.SeMaKuLabel.Position = [26 432 103 37];
+            app.SeMaKuLabel.Text = 'SeMaKu';
+
+            % Create version10Label
+            app.version10Label = uilabel(app.cambiarmodo);
+            app.version10Label.FontName = 'Alef';
+            app.version10Label.FontColor = [1 1 1];
+            app.version10Label.Position = [26 415 63 22];
+            app.version10Label.Text = 'version 1.0';
+
+            % Create graficaHum
+            app.graficaHum = uiaxes(app.cambiarmodo);
+            title(app.graficaHum, 'GRAFICO HUMEDAD')
+            xlabel(app.graficaHum, 'Tiempo')
+            ylabel(app.graficaHum, 'Humedad')
+            zlabel(app.graficaHum, 'Z')
+            app.graficaHum.PlotBoxAspectRatio = [1.93827160493827 1 1];
+            app.graficaHum.Position = [317 124 299 259];
+
+            % Create graficaTem
+            app.graficaTem = uiaxes(app.cambiarmodo);
+            title(app.graficaTem, 'GRAFICO TEMPERATURA')
+            xlabel(app.graficaTem, 'Tiempo')
+            ylabel(app.graficaTem, 'Temperatura')
+            zlabel(app.graficaTem, 'Z')
+            app.graficaTem.PlotBoxAspectRatio = [1.76470588235294 1 1];
+            app.graficaTem.Position = [22 147 288 191];
+
+            % Show the figure after all components are created
+            app.cambiarmodo.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = app1TPFINALED3
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.cambiarmodo)
+
+            % Execute the startup function
+            runStartupFcn(app, @startupFcn)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.cambiarmodo)
+        end
+    end
+end
